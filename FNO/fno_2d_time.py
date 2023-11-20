@@ -81,10 +81,10 @@ class FourierLayerBlock(nn.Module):
     * modes: int - Number of Fourier modes to multiply, default = 6 (2 modes per dimension)
     * layers: int - Number of layers in the block, default = 4
     """
-    def __init__(self, modes=6, layers=4):
+    def __init__(self, modes=6, width=4):
         super(FourierLayerBlock, self).__init__()
         self.modes = modes
-        self.layers = layers
+        self.width = width
         
         # 3D Fourier Spectral Convolution Layer
         self.rama_superior = SpectralConv3D(self.width, self.width, self.modes)
@@ -115,7 +115,7 @@ class FNO2DTime(nn.Module):
     * width: int - Number of channels in the hidden layers, default = 10
     * layers: int - Number of layers in the block, default = 4
     """
-    def __init__(self, modes=6, width=10, layers=4):
+    def __init__(self, modes=6, width=10, layers=4, ti=10):
         super(FNO2DTime, self).__init__()
         self.modes = modes
         self.width = width
@@ -125,7 +125,7 @@ class FNO2DTime(nn.Module):
         self.size_t = 0
         
         # Input Layer (P) [batch, in, x, y, t]
-        self.fc0 = nn.Linear(self.size_t + 3, self.width)
+        self.fc0 = nn.Linear(ti+3, self.width)
         
         # Array of Fourier Layer Blocks
         self.module = nn.ModuleList()
@@ -172,6 +172,6 @@ class FNO2DTime(nn.Module):
     
     def set_grid(self, x):
         _, self.size_x, self.size_y, self.size_t = x.shape
-        self.gridx = torch.tensor(torch.linspace(0, 1, self.Sx), dtype=torch.float, device=x.device).reshape(1, self.Sx, 1, 1, 1).repeat([1, 1, self.Sy, self.T, 1])
-        self.gridy = torch.tensor(torch.linspace(0, 1, self.Sy), dtype=torch.float, device=x.device).reshape(1, 1, self.Sy, 1, 1).repeat([1, self.Sx, 1, self.T, 1])
-        self.gridt = torch.tensor(torch.linspace(0, 1, self.T+1)[1:], dtype=torch.float, device=x.device).reshape(1, 1, 1, self.T, 1).repeat([1, self.Sx, self.Sy, 1, 1])
+        self.gridx = torch.tensor(torch.linspace(0, 1, self.size_x), dtype=torch.float, device=x.device).reshape(1, self.size_x, 1, 1, 1).repeat([1, 1, self.size_y, self.size_t, 1]).clone().detach().requires_grad_(True)
+        self.gridy = torch.tensor(torch.linspace(0, 1, self.size_y), dtype=torch.float, device=x.device).reshape(1, 1, self.size_y, 1, 1).repeat([1, self.size_x, 1, self.size_t, 1]).clone().detach().requires_grad_(True)
+        self.gridt = torch.tensor(torch.linspace(0, 1, self.size_t+1)[1:], dtype=torch.float, device=x.device).reshape(1, 1, 1, self.size_t, 1).repeat([1, self.size_x, self.size_y, 1, 1]).clone().detach().requires_grad_(True)
