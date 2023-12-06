@@ -142,9 +142,9 @@ class FNO2DTime(nn.Module):
             self.set_grid(x)
         x = x.reshape(batchsize, size_x, size_y, 1, size_t).repeat([1, 1, 1, self.size_t, 1])
         x = torch.cat((
-                        self.gridx.repeat([batchsize, 1, 1, 1, 1]),
-                        self.gridy.repeat([batchsize, 1, 1, 1, 1]),
-                        self.gridt.repeat([batchsize, 1, 1, 1, 1]),
+                        self.gridx.repeat([batchsize, 1, 1, 1, 1]).clone(),
+                        self.gridy.repeat([batchsize, 1, 1, 1, 1]).clone(),
+                        self.gridt.repeat([batchsize, 1, 1, 1, 1]).clone(),
                         x),
                         dim=-1)
         _, size_x, size_y, size_z, _ = x.shape
@@ -172,6 +172,6 @@ class FNO2DTime(nn.Module):
     
     def set_grid(self, x):
         _, self.size_x, self.size_y, self.size_t = x.shape
-        self.gridx = torch.tensor(torch.linspace(0, 1, self.size_x), dtype=torch.float, device=x.device).reshape(1, self.size_x, 1, 1, 1).repeat([1, 1, self.size_y, self.size_t, 1]).clone().detach().requires_grad_(True)
-        self.gridy = torch.tensor(torch.linspace(0, 1, self.size_y), dtype=torch.float, device=x.device).reshape(1, 1, self.size_y, 1, 1).repeat([1, self.size_x, 1, self.size_t, 1]).clone().detach().requires_grad_(True)
-        self.gridt = torch.tensor(torch.linspace(0, 1, self.size_t+1)[1:], dtype=torch.float, device=x.device).reshape(1, 1, 1, self.size_t, 1).repeat([1, self.size_x, self.size_y, 1, 1]).clone().detach().requires_grad_(True)
+        self.gridx = torch.tensor(torch.linspace(0, 1, self.size_x), dtype=torch.float, device=x.device).reshape(1, self.size_x, 1, 1, 1).repeat([1, 1, self.size_y, self.size_t, 1])
+        self.gridy = torch.tensor(torch.linspace(0, 1, self.size_y), dtype=torch.float, device=x.device).reshape(1, 1, self.size_y, 1, 1).repeat([1, self.size_x, 1, self.size_t, 1])
+        self.gridt = torch.tensor(torch.linspace(0, 1, self.size_t+1)[1:], dtype=torch.float, device=x.device).reshape(1, 1, 1, self.size_t, 1).repeat([1, self.size_x, self.size_y, 1, 1])
