@@ -12,6 +12,7 @@ This repository contains a PyTorch implementation of the following paper:
 ## Navier-Stokes equations
 
 This repository contains a code for data generation to solve Navier-Stokes equations using spectral method. The Navier-Stokes equations are given by
+
 $$
 \begin{align*}
 \partial_t w(x,t) + u(x,t) \cdot \nabla w(x,t) &= \nu \Delta w(x,t) + f(x)\\
