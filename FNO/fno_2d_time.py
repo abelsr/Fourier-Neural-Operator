@@ -172,6 +172,6 @@ class FNO2DTime(nn.Module):
     
     def set_grid(self, x):
         _, self.size_x, self.size_y, self.size_t = x.shape
-        self.gridx = torch.tensor(torch.linspace(0, 1, self.size_x), dtype=torch.float, device=x.device).reshape(1, self.size_x, 1, 1, 1).repeat([1, 1, self.size_y, self.size_t, 1])
-        self.gridy = torch.tensor(torch.linspace(0, 1, self.size_y), dtype=torch.float, device=x.device).reshape(1, 1, self.size_y, 1, 1).repeat([1, self.size_x, 1, self.size_t, 1])
-        self.gridt = torch.tensor(torch.linspace(0, 1, self.size_t+1)[1:], dtype=torch.float, device=x.device).reshape(1, 1, 1, self.size_t, 1).repeat([1, self.size_x, self.size_y, 1, 1])
+        self.gridx = torch.linspace(0, 1, self.size_x, dtype=torch.float, device=x.device).reshape(1, self.size_x, 1, 1, 1).repeat([1, 1, self.size_y, self.size_t, 1]).clone().detach().requires_grad_(True)
+        self.gridy = torch.linspace(0, 1, self.size_y, dtype=torch.float, device=x.device).reshape(1, 1, self.size_y, 1, 1).repeat([1, self.size_x, 1, self.size_t, 1]).clone().detach().requires_grad_(True)
+        self.gridt = torch.linspace(0, 1, self.size_t+1, dtype=torch.float, device=x.device)[1:].reshape(1, 1, 1, self.size_t, 1).repeat([1, self.size_x, self.size_y, 1, 1]).clone().detach().requires_grad_(True)
