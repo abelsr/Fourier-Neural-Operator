@@ -1,6 +1,6 @@
 # Fourier Neural Operator
 
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.0.0-red.svg)](https://pytorch.org/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.1.0-red.svg)](https://pytorch.org/)
 [![Python](https://img.shields.io/badge/Python-3.8.0-blue.svg)](https://www.python.org/)
 ![Google Colab](https://img.shields.io/badge/Google%20Colab-Open%20In%20Colab-yellow.svg)
 ![alpha](https://img.shields.io/badge/alpha-0.1.0-orange.svg)
