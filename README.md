@@ -2,7 +2,7 @@
 
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.1.0-red.svg)](https://pytorch.org/)
 [![Python](https://img.shields.io/badge/Python-3.8.0-blue.svg)](https://www.python.org/)
-![Google Colab](https://img.shields.io/badge/Google%20Colab-Open%20In%20Colab-yellow.svg)
+[![Google Colab](https://img.shields.io/badge/Google%20Colab-Open%20In%20Colab-yellow.svg)](https://colab.research.google.com/drive/15ztLOeiNlLfpwnqhw-Q1btFOAwybXjfL?usp=sharing)
 ![alpha](https://img.shields.io/badge/alpha-0.1.0-orange.svg)
 
 This repository contains a PyTorch implementation of the following paper:
@@ -46,16 +46,9 @@ pip install -r requirements.txt
 
 Also if you prefer install by yourself, you can install the following packages:
 
-- `torch>=1.7.0`
+- `torch>=2.1.0`
 - `matplotlib`
 - `numpy`
 - `scipy`
 - `tqdm`
 - `h5py`
-
-
-## Usage
-
-This repository contains Jupyter notebooks to solve and generate data for Navier-Stokes equations, and to train and test the model. 
-
-
