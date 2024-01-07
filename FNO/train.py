@@ -9,7 +9,7 @@ This module contains the train function for FNO models.
 * `train_model`: Trains the model
 """
 import torch
-from lploss import LpLoss
+from FNO.lploss import LpLoss
 import numpy as np
 import torch.nn.functional as F
 from itertools import islice as take
@@ -102,6 +102,11 @@ def train_model(model, train_dataloader, test_dataloader, epochs=20, device='cpu
     * train_batches: int - Number of batches to train
     * test_batches: int - Number of batches to evaluate
     * device: str - Device to use (cpu or cuda)
+    
+    Returns:
+    --------
+    * loss_hist: List[List[float]] - History of losses
+    * mse_hist: List[List[float]] - History of mses
     """
     # Loss function
     loss_function = LpLoss(size_average=False)
