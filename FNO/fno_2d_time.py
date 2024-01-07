@@ -116,6 +116,15 @@ class FNO2DTime(nn.Module):
     * layers: int - Number of layers in the block, default = 4
     """
     def __init__(self, modes=6, width=10, layers=4, ti=10):
+        """
+        Fourier Neural Operator 2D Time-Dependent
+        
+        Parameters:
+        -----------
+        * modes: int - Number of Fourier modes to multiply, default = 6 (2 modes per dimension)
+        * width: int - Number of channels in the hidden layers, default = 10
+        * layers: int - Number of layers in the block, default = 4
+        """
         super(FNO2DTime, self).__init__()
         self.modes = modes
         self.width = width
