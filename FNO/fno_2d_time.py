@@ -20,28 +20,24 @@ class SpectralConv3D(nn.Module):
     -----------
     * in_channels: int - Number of input channels
     * out_channels: int - Number of output channels
-    * modes: int - Number of Fourier modes to multiply, default = 6 (2 modes per dimension)
+    * modes: List[int] - Number of Fourier modes to multiply, default = 6 (2 modes per dimension) at most N/2 + 1
     """
     def __init__(self, in_channels, out_channels, modes=6):
         super(SpectralConv3D, self).__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
         
-        # 2 modes per dimension max, i.e. 6 modes for 3D
+        # N/2 + 1 modes per dimension at most
         self.modes = modes
         
         # Scale used to initialize weights
         self.scale = 1 / (in_channels * out_channels)
         
         # Weights for different convolution operations in Fourier space
-        self.weights1 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, modes, modes,
-                                                             modes, dtype=torch.cfloat))
-        self.weights2 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, modes, modes,
-                                                             modes, dtype=torch.cfloat))
-        self.weights3 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, modes, modes,
-                                                             modes, dtype=torch.cfloat))
-        self.weights4 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, modes, modes,
-                                                             modes, dtype=torch.cfloat))
+        self.weights1 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, modes[0], modes[1], modes[2], dtype=torch.cfloat))
+        self.weights2 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, modes[0], modes[1], modes[2], dtype=torch.cfloat))
+        self.weights3 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, modes[0], modes[1], modes[2], dtype=torch.cfloat))
+        self.weights4 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, modes[0], modes[1], modes[2], dtype=torch.cfloat))
 
     def complex_multi_3D(self, inputs, weights):
         # Complex multiplication between inputs and weights
@@ -57,13 +53,10 @@ class SpectralConv3D(nn.Module):
         out_ft = torch.zeros(batchsize, self.out_channels, x.size(-3), x.size(-2), x.size(-1)//2 + 1, dtype=torch.cfloat, device=x.device)
         
         # Multiply the relevant Fourier modes with the corresponding weights
-        out_ft[:, :, :self.modes, :self.modes, :self.modes] = self.complex_multi_3D(x_ft[:, :, :self.modes, :self.modes, :self.modes], self.weights1)
-        
-        out_ft[:, :, -self.modes:, :self.modes, :self.modes] = self.complex_multi_3D(x_ft[:, :, -self.modes:, :self.modes, :self.modes], self.weights2)
-        
-        out_ft[:, :, :self.modes, -self.modes:, :self.modes] = self.complex_multi_3D(x_ft[:, :, :self.modes, -self.modes:, :self.modes], self.weights3)
-
-        out_ft[:, :, -self.modes:, -self.modes:, :self.modes] = self.complex_multi_3D(x_ft[:, :, -self.modes:, -self.modes:, :self.modes], self.weights4)
+        out_ft[:, :, :self.modes[0],  :self.modes[1],  :self.modes[2]] = self.complex_multi_3D(x_ft[:, :, :self.modes[0],  :self.modes[1],  :self.modes[2]], self.weights1)
+        out_ft[:, :, -self.modes[0]:, :self.modes[1],  :self.modes[2]] = self.complex_multi_3D(x_ft[:, :, -self.modes[0]:, :self.modes[1],  :self.modes[2]], self.weights2)
+        out_ft[:, :, :self.modes[0],  -self.modes[1]:, :self.modes[2]] = self.complex_multi_3D(x_ft[:, :, :self.modes[0],  -self.modes[1]:, :self.modes[2]], self.weights3)
+        out_ft[:, :, -self.modes[0]:, -self.modes[1]:, :self.modes[2]] = self.complex_multi_3D(x_ft[:, :, -self.modes[0]:, -self.modes[1]:, :self.modes[2]], self.weights4)
         
         
         # Calculate the inverse Fourier transform to get the final output in real space
@@ -78,7 +71,7 @@ class FourierLayerBlock(nn.Module):
     
     Parameters:
     -----------
-    * modes: int - Number of Fourier modes to multiply, default = 6 (2 modes per dimension)
+    * modes: List[int] - Number of Fourier modes to multiply, default = 6 (2 modes per dimension)
     * layers: int - Number of layers in the block, default = 4
     """
     def __init__(self, modes=6, width=4):
@@ -111,7 +104,7 @@ class FNO2DTime(nn.Module):
     
     Parameters:
     -----------
-    * modes: int - Number of Fourier modes to multiply, default = 6 (2 modes per dimension)
+    * modes: List[int] - Number of Fourier modes to multiply, default = 6 (2 modes per dimension)
     * width: int - Number of channels in the hidden layers, default = 10
     * layers: int - Number of layers in the block, default = 4
     """
@@ -121,7 +114,7 @@ class FNO2DTime(nn.Module):
         
         Parameters:
         -----------
-        * modes: int - Number of Fourier modes to multiply, default = 6 (2 modes per dimension)
+        * modes: List[int] - Number of Fourier modes to multiply, default = 6 (2 modes per dimension)
         * width: int - Number of channels in the hidden layers, default = 10
         * layers: int - Number of layers in the block, default = 4
         """
@@ -147,6 +140,11 @@ class FNO2DTime(nn.Module):
 
     def forward(self, x):
         batchsize, size_x, size_y, size_t = x.shape
+        
+        # Check modes (N/2 + 1 modes per dimension at most)
+        for mode in self.modes:
+            assert mode <= size_x//2 + 1 and mode <= size_y//2 + 1 and mode <= size_t//2 + 1, "Too many modes for the input size."
+        
         if self.size_x != size_x or self.size_y != size_y or self.size_t != size_t:
             self.set_grid(x)
         x = x.reshape(batchsize, size_x, size_y, 1, size_t).repeat([1, 1, 1, self.size_t, 1])
@@ -169,7 +167,6 @@ class FNO2DTime(nn.Module):
             x = mod(x, batchsize, size_x, size_y, size_z)
         
         # Linear Layers (Q) and ReLU activation function
-        
         # Swap the order of dimensions to [batch, in, x, y, t]
         x = x.permute(0, 2, 3, 4, 1)
         
