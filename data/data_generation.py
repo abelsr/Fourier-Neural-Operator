@@ -6,8 +6,42 @@ from timeit import default_timer
 from tqdm.notebook import tqdm
 
 class GaussianRF(object):
+    """
+    Represents a Gaussian Random Field generator.
+
+    Args:
+        dim (int): The dimension of the random field.
+        size (int): The size of the random field.
+        alpha (float, optional): The parameter alpha. Defaults to 2.
+        tau (float, optional): The parameter tau. Defaults to 3.
+        sigma (float, optional): The standard deviation of the random field. If None, it is calculated based on tau and alpha. Defaults to None.
+        boundary (str, optional): The boundary condition of the random field. Defaults to "periodic".
+        device (str, optional): The device to use for computation. Defaults to None.
+
+    Attributes:
+        dim (int): The dimension of the random field.
+        device (str): The device used for computation.
+        sqrt_eig (torch.Tensor): The square root of the eigenvalues of the random field.
+        size (tuple): The size of the random field.
+
+    Methods:
+        sample(N): Generates N samples of the random field.
+
+    """
 
     def __init__(self, dim, size, alpha=2, tau=3, sigma=None, boundary="periodic", device=None):
+        """
+        Initializes a GaussianRF object.
+
+        Args:
+            dim (int): The dimension of the random field.
+            size (int): The size of the random field.
+            alpha (float, optional): The parameter alpha. Defaults to 2.
+            tau (float, optional): The parameter tau. Defaults to 3.
+            sigma (float, optional): The standard deviation of the random field. If None, it is calculated based on tau and alpha. Defaults to None.
+            boundary (str, optional): The boundary condition of the random field. Defaults to "periodic".
+            device (str, optional): The device to use for computation. Defaults to None.
+        """
 
         self.dim = dim
         self.device = device
@@ -51,6 +85,15 @@ class GaussianRF(object):
         self.size = tuple(self.size)
 
     def sample(self, N):
+        """
+        Generates N samples of the random field.
+
+        Args:
+            N (int): The number of samples to generate.
+
+        Returns:
+            torch.Tensor: The generated samples of the random field.
+        """
 
         coeff = torch.randn(N, *self.size, dtype=torch.cfloat, device=self.device)
         coeff = self.sqrt_eig * coeff
@@ -60,7 +103,21 @@ class GaussianRF(object):
 
 # Function to solve Navier-Stokes equation in 2D
 def navier_stokes_2d(w0, f, visc, T, delta_t=1e-4, record_steps=1):
+    """
+    Solve the 2D Navier-Stokes equations using the Fourier spectral method.
 
+    Parameters:
+    - w0 (torch.Tensor): Initial vorticity field.
+    - f (torch.Tensor): Forcing field.
+    - visc (float): Viscosity coefficient.
+    - T (float): Total time.
+    - delta_t (float): Time step size (default: 1e-4).
+    - record_steps (int): Number of steps between each recorded solution (default: 1).
+
+    Returns:
+    - sol (torch.Tensor): Solution tensor containing the vorticity field at each recorded time step.
+    - sol_t (torch.Tensor): Time tensor containing the recorded time steps.
+    """
     # Grid size - it must be power of 2
     N = w0.size()[-1]
 
@@ -156,6 +213,27 @@ def navier_stokes_2d(w0, f, visc, T, delta_t=1e-4, record_steps=1):
 
 
 def generate_ns_data(resolution, N, f, visc, delta_t, T_final, record_steps, batch_size, device, debug=False):
+    """
+    Generates data for the Navier-Stokes equation.
+
+    Args:
+        resolution (int): Resolution of the data.
+        N (int): Number of data samples to generate.
+        f (float): External force term in the Navier-Stokes equation.
+        visc (float): Viscosity term in the Navier-Stokes equation.
+        delta_t (float): Time step size.
+        T_final (float): Final time for the simulation.
+        record_steps (int): Number of time steps to record.
+        batch_size (int): Batch size for generating data.
+        device (str): Device to use for computation (e.g., 'cpu', 'cuda').
+        debug (bool, optional): Whether to print debug information. Defaults to False.
+
+    Returns:
+        tuple: A tuple containing three torch tensors:
+            - a (torch.Tensor): Random initial conditions of shape (N, resolution, resolution).
+            - u (torch.Tensor): Solutions of the Navier-Stokes equation of shape (N, resolution, resolution, record_steps).
+            - solt_t (torch.Tensor): Time points at which the solutions are recorded of shape (record_steps,).
+    """
     c = 0
     t0 = default_timer()
     GRF = GaussianRF(2,
