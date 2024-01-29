@@ -109,16 +109,17 @@ def train_model(model, train_dataloader, test_dataloader, epochs=20, device='cpu
     * mse_hist: List[List[float]] - History of mses
     """
     # Loss function
-    loss_function = LpLoss(size_average=False)
+    loss_function = kwargs.get('loss_function', 
+                               LpLoss(size_average=False))
     # loss_function = torch.nn.L1Loss()
     
     # Optimizer
-    # opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
-    opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
-    # opt = torch.optim.Adam(model.parameters(), lr=lr)
+    opt = kwargs.get('optimizer',
+                     torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4))
     
     # Scheduler
-    scheduler = torch.optim.lr_scheduler.StepLR(opt, step_size=scheduler_step, gamma=scheduler_gamma)
+    scheduler = kwargs.get('scheduler', 
+                           torch.optim.lr_scheduler.StepLR(opt, step_size=scheduler_step, gamma=scheduler_gamma))
     
     # Initialize histories
     loss_hist, mse_hist = [], []
