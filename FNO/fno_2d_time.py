@@ -142,8 +142,9 @@ class FNO2DTime(nn.Module):
         batchsize, size_x, size_y, size_t = x.shape
         
         # Check modes (N/2 + 1 modes per dimension at most)
-        for mode in self.modes:
-            assert mode <= size_x//2 + 1 and mode <= size_y//2 + 1 and mode <= size_t//2 + 1, "Too many modes for the input size."
+        assert self.modes[0] <= size_x//2 + 1, "Error: The number of modes in x is too large"
+        assert self.modes[1] <= size_y//2 + 1, "Error: The number of modes in y is too large"
+        assert self.modes[2] <= size_t//2 + 1, "Error: The number of modes in t is too large"
         
         if self.size_x != size_x or self.size_y != size_y or self.size_t != size_t:
             self.set_grid(x)
