@@ -22,7 +22,7 @@ class SpectralConv3D(nn.Module):
     * out_channels: int - Number of output channels
     * modes: List[int] - Number of Fourier modes to multiply, default = 6 (2 modes per dimension) at most N/2 + 1
     """
-    def __init__(self, in_channels, out_channels, modes=6):
+    def __init__(self, in_channels, out_channels, modes=(6, 6, 6)):
         super(SpectralConv3D, self).__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -74,7 +74,7 @@ class FourierLayerBlock(nn.Module):
     * modes: List[int] - Number of Fourier modes to multiply, default = 6 (2 modes per dimension)
     * layers: int - Number of layers in the block, default = 4
     """
-    def __init__(self, modes=6, width=4):
+    def __init__(self, modes=(6, 6, 6), width=4):
         super(FourierLayerBlock, self).__init__()
         self.modes = modes
         self.width = width
@@ -107,8 +107,9 @@ class FNO2DTime(nn.Module):
     * modes: List[int] - Number of Fourier modes to multiply, default = 6 (2 modes per dimension)
     * width: int - Number of channels in the hidden layers, default = 10
     * layers: int - Number of layers in the block, default = 4
+    * ti: int - Number of input features, default = 10
     """
-    def __init__(self, modes=6, width=10, layers=4, ti=10):
+    def __init__(self, modes=(6, 6, 6), width=10, layers=4, ti=10):
         """
         Fourier Neural Operator 2D Time-Dependent
         
@@ -117,6 +118,7 @@ class FNO2DTime(nn.Module):
         * modes: List[int] - Number of Fourier modes to multiply, default = 6 (2 modes per dimension)
         * width: int - Number of channels in the hidden layers, default = 10
         * layers: int - Number of layers in the block, default = 4
+        - ti: int - Number of input features, default = 10
         """
         super(FNO2DTime, self).__init__()
         self.modes = modes
