@@ -1,0 +1,15 @@
+torch
+torchaudio
+torchvision
+h5py
+ipykernel
+ipython
+ipywidgets
+jupyter
+matplotlib
+numpy
+pandas
+Pillow
+scipy
+sympy
+tqdm

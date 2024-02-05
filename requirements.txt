@@ -1,5 +1,0 @@
-pytorch==2.1
-numpy
-scipy
-pandas
-matplotlib
