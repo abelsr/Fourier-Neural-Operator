@@ -15,6 +15,8 @@ import torch.nn.functional as F
 from itertools import islice as take
 from tqdm import trange
 from typing import List
+import pandas as pd
+from time import time
 
 def train_epoch(dataloader, model, optimizer, scheduler, loss_function, device='cpu'):
     """
@@ -102,6 +104,7 @@ def train_model(model, train_dataloader, test_dataloader, epochs=20, device='cpu
     * train_batches: int - Number of batches to train
     * test_batches: int - Number of batches to evaluate
     * device: str - Device to use (cpu or cuda)
+    * timer: bool - Timer
     
     Returns:
     --------
@@ -121,8 +124,15 @@ def train_model(model, train_dataloader, test_dataloader, epochs=20, device='cpu
     scheduler = kwargs.get('scheduler', 
                            torch.optim.lr_scheduler.StepLR(opt, step_size=scheduler_step, gamma=scheduler_gamma))
     
+    # Timer
+    timer = kwargs.get('timer', False)
+    
     # Initialize histories
     loss_hist, mse_hist = [], []
+    
+    # Start timer
+    if timer is True:
+        start = time()
     
     # Train for each epoch
     for epoch in trange(epochs):
@@ -140,4 +150,13 @@ def train_model(model, train_dataloader, test_dataloader, epochs=20, device='cpu
         loss_hist.append([trn_loss, tst_loss])
         mse_hist.append([trn_mse, tst_mse])
         
-    return loss_hist, mse_hist
+    # End timer
+    if timer is True:
+        end = time()
+    
+    # if timer is True, return the time with the histories
+    if timer is True:
+        return {'results': [pd.DataFrame(loss_hist, columns=['train', 'test']), pd.DataFrame(mse_hist, columns=['train', 'test'])],
+                'time': end - start}
+    else:
+        return {'results': [pd.DataFrame(loss_hist, columns=['train', 'test']), pd.DataFrame(mse_hist, columns=['train', 'test'])]}
