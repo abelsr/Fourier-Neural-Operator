@@ -109,7 +109,7 @@ class FNO2DTime(nn.Module):
     * layers: int - Number of layers in the block, default = 4
     * ti: int - Number of input features, default = 10
     """
-    def __init__(self, modes=(6, 6, 6), width=10, layers=4, ti=10):
+    def __init__(self, modes=(6, 6, 6), width=10, layers=4, ti=10, padding=0):
         """
         Fourier Neural Operator 2D Time-Dependent
         
@@ -118,12 +118,14 @@ class FNO2DTime(nn.Module):
         * modes: List[int] - Number of Fourier modes to multiply, default = 6 (2 modes per dimension)
         * width: int - Number of channels in the hidden layers, default = 10
         * layers: int - Number of layers in the block, default = 4
-        - ti: int - Number of input features, default = 10
+        * ti: int - Number of input features, default = 10
+        * padding: int - Padding size, default = 0
         """
         super(FNO2DTime, self).__init__()
         self.modes = modes
         self.width = width
         self.layers = layers
+        self.padding = padding
         self.size_x = 0
         self.size_y = 0
         self.size_t = 0
@@ -165,11 +167,20 @@ class FNO2DTime(nn.Module):
         # Swap the order of dimensions to [batch, in, x, y, in]
         x = x.permute(0, 4, 1, 2, 3)
         
+        # Add padding to the input tensor
+        if self.padding > 0:
+            x = F.pad(x, [0,self.padding, 0,self.padding])
+        
         # Forward pass through the Fourier Layer Blocks
         for mod in self.module:
             x = mod(x, batchsize, size_x, size_y, size_z)
         
         # Linear Layers (Q) and ReLU activation function
+        
+        # Remove padding
+        if self.padding > 0:
+            x = x[..., :-self.padding, :-self.padding]
+        
         # Swap the order of dimensions to [batch, in, x, y, t]
         x = x.permute(0, 2, 3, 4, 1)
         
