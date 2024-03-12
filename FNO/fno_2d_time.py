@@ -63,7 +63,6 @@ class SpectralConv3D(nn.Module):
         result = torch.fft.irfftn(out_ft, s=(x.size(-3), x.size(-2), x.size(-1)))
         return result
     
-    
 # Fourier Layer Block
 class FourierLayerBlock(nn.Module):
     """
@@ -74,16 +73,21 @@ class FourierLayerBlock(nn.Module):
     * modes: List[int] - Number of Fourier modes to multiply, default = 6 (2 modes per dimension)
     * layers: int - Number of layers in the block, default = 4
     """
-    def __init__(self, modes=(6, 6, 6), width=4):
+    def __init__(self, modes=(6, 6, 6), width=4, norm=None):
         super(FourierLayerBlock, self).__init__()
         self.modes = modes
         self.width = width
+        self.norm = norm
         
         # 3D Fourier Spectral Convolution Layer
         self.rama_superior = SpectralConv3D(self.width, self.width, self.modes)
         
         # 1D Convolution Layer
         self.rama_inferior = nn.Conv1d(self.width, self.width, 1)
+        
+        # Normalization Layer (e.g., BatchNorm3d or LayerNorm)
+        if self.norm:
+            self.norm = nn.BatchNorm3d(self.width)
 
     def forward(self, x, batchsize, size_x, size_y, size_z):
         # Forward pass in the upper branch (3D Fourier Spectral Convolution Layer)
@@ -95,6 +99,8 @@ class FourierLayerBlock(nn.Module):
         # Sum the outputs of both branches and apply a ReLU activation function
         x = x_sup + x_inf # (+)
         x = F.relu(x) # (𝜎)
+        if self.norm:
+            x = self.norm(x)  # Normalization
         return x
     
 # Fourier Neural Operator 2D Time-Dependent
@@ -109,7 +115,7 @@ class FNO2DTime(nn.Module):
     * layers: int - Number of layers in the block, default = 4
     * ti: int - Number of input features, default = 10
     """
-    def __init__(self, modes=(6, 6, 6), width=10, layers=4, ti=10, padding=0):
+    def __init__(self, modes=(6, 6, 6), width=10, layers=4, ti=10, padding=None, dropout=None, norm=None):
         """
         Fourier Neural Operator 2D Time-Dependent
         
@@ -129,6 +135,7 @@ class FNO2DTime(nn.Module):
         self.size_x = 0
         self.size_y = 0
         self.size_t = 0
+        self.dropout = dropout
         
         # Input Layer (P) [batch, in, x, y, t]
         self.fc0 = nn.Linear(ti+3, self.width)
@@ -136,20 +143,30 @@ class FNO2DTime(nn.Module):
         # Array of Fourier Layer Blocks
         self.module = nn.ModuleList()
         for _ in range(self.layers):
-            self.module.append(FourierLayerBlock(self.modes, self.width))
+            self.module.append(FourierLayerBlock(self.modes, self.width, norm))
             
         # Linear Layers (Q)
         self.fc1 = nn.Linear(self.width, 128)
+        if dropout:
+            self.dropout = nn.Dropout(p=dropout)
         self.fc2 = nn.Linear(128, 1)
+    
+    def __repr__(self):
+        return f"FNO2DTime(modes={self.modes}, width={self.width}, layers={self.layers}, padding={self.padding})"
 
     def forward(self, x):
         batchsize, size_x, size_y, size_t = x.shape
         
         # Check modes (N/2 + 1 modes per dimension at most)
-        assert self.modes[0] <= size_x//2 + 1, "Error: The number of modes in x is too large"
-        assert self.modes[1] <= size_y//2 + 1, "Error: The number of modes in y is too large"
-        assert self.modes[2] <= size_t//2 + 1, "Error: The number of modes in t is too large"
-        
+        if self.padding:
+            assert self.modes[0] <= (size_x+self.padding[0])//2 + 1, "Error: The number of modes in x is too large"
+            assert self.modes[1] <= (size_y+self.padding[1])//2 + 1, "Error: The number of modes in y is too large"
+            assert self.modes[2] <= (size_t+self.padding[2])//2 + 1, "Error: The number of modes in t is too large"
+        else:
+            assert self.modes[0] <= size_x//2 + 1, "Error: The number of modes in x is too large"
+            assert self.modes[1] <= size_y//2 + 1, "Error: The number of modes in y is too large"
+            assert self.modes[2] <= size_t//2 + 1, "Error: The number of modes in t is too large"
+
         if self.size_x != size_x or self.size_y != size_y or self.size_t != size_t:
             self.set_grid(x)
         x = x.reshape(batchsize, size_x, size_y, 1, size_t).repeat([1, 1, 1, self.size_t, 1])
@@ -164,28 +181,33 @@ class FNO2DTime(nn.Module):
         # Forward pass through the input layer (P)
         x = self.fc0(x)
         
-        # Swap the order of dimensions to [batch, in, x, y, in]
+        # Swap the order of dimensions to [batch, in, x, y, t]
         x = x.permute(0, 4, 1, 2, 3)
         
-        # Add padding to the input tensor
-        if self.padding > 0:
-            x = F.pad(x, [0,self.padding, 0,self.padding])
+        # Add padding to the input tensor [batch, in, x+padding, y+padding, t+padding]
+        if self.padding:
+            x = F.pad(x, (0, 0, 0, self.padding[0], self.padding[1], 0))
+            x = F.pad(x, (0,self.padding[2]), "constant", 0)
+        
         
         # Forward pass through the Fourier Layer Blocks
         for mod in self.module:
+            batchsize, _, size_x, size_y, size_z = x.shape
             x = mod(x, batchsize, size_x, size_y, size_z)
         
         # Linear Layers (Q) and ReLU activation function
         
         # Remove padding
-        if self.padding > 0:
-            x = x[..., :-self.padding, :-self.padding]
+        if self.padding:
+            x = x[:, :, :-self.padding[0], :-self.padding[1], :-self.padding[2]]
         
         # Swap the order of dimensions to [batch, in, x, y, t]
         x = x.permute(0, 2, 3, 4, 1)
         
         x = self.fc1(x)
-        x = F.relu(x)
+        x = F.gelu(x)
+        if self.dropout:
+            x = self.dropout(x)  # Apply dropout
         x = self.fc2(x)
 
         return x
