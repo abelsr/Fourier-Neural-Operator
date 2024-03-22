@@ -58,7 +58,6 @@ class SpectralConv3D(nn.Module):
         out_ft[:, :, :self.modes[0],  -self.modes[1]:, :self.modes[2]] = self.complex_multi_3D(x_ft[:, :, :self.modes[0],  -self.modes[1]:, :self.modes[2]], self.weights3)
         out_ft[:, :, -self.modes[0]:, -self.modes[1]:, :self.modes[2]] = self.complex_multi_3D(x_ft[:, :, -self.modes[0]:, -self.modes[1]:, :self.modes[2]], self.weights4)
         
-        
         # Calculate the inverse Fourier transform to get the final output in real space
         result = torch.fft.irfftn(out_ft, s=(x.size(-3), x.size(-2), x.size(-1)))
         return result
@@ -115,7 +114,7 @@ class FNO2DTime(nn.Module):
     * layers: int - Number of layers in the block, default = 4
     * ti: int - Number of input features, default = 10
     """
-    def __init__(self, modes=(6, 6, 6), width=10, layers=4, ti=10, padding=None, dropout=None, norm=None):
+    def __init__(self, modes=(6, 6, 6), width=10, layers=4, channels=10, padding=None, dropout=None, norm=None):
         """
         Fourier Neural Operator 2D Time-Dependent
         
@@ -124,7 +123,7 @@ class FNO2DTime(nn.Module):
         * modes: List[int] - Number of Fourier modes to multiply, default = 6 (2 modes per dimension)
         * width: int - Number of channels in the hidden layers, default = 10
         * layers: int - Number of layers in the block, default = 4
-        * ti: int - Number of input features, default = 10
+        * channels: int - Number of input channels, default = 10
         * padding: int - Padding size, default = 0
         """
         super(FNO2DTime, self).__init__()
@@ -136,9 +135,10 @@ class FNO2DTime(nn.Module):
         self.size_y = 0
         self.size_t = 0
         self.dropout = dropout
+        self.channels = channels
         
         # Input Layer (P) [batch, in, x, y, t]
-        self.fc0 = nn.Linear(ti+3, self.width)
+        self.fc0 = nn.Linear(self.channels+3, self.width)
         
         # Array of Fourier Layer Blocks
         self.module = nn.ModuleList()
@@ -152,7 +152,7 @@ class FNO2DTime(nn.Module):
         self.fc2 = nn.Linear(128, 1)
     
     def __repr__(self):
-        return f"FNO2DTime(modes={self.modes}, width={self.width}, layers={self.layers}, padding={self.padding})"
+        return f"{__class__.__name__}(modes={self.modes}, width={self.width}, layers={self.layers}, channels={self.channels}, padding={self.padding}, dropout={self.dropout}, norm={self.norm})"
 
     def forward(self, x):
         batchsize, size_x, size_y, size_t = x.shape
@@ -169,7 +169,7 @@ class FNO2DTime(nn.Module):
 
         if self.size_x != size_x or self.size_y != size_y or self.size_t != size_t:
             self.set_grid(x)
-        x = x.reshape(batchsize, size_x, size_y, 1, size_t).repeat([1, 1, 1, self.size_t, 1])
+        x = x.reshape(batchsize, size_x, size_y, size_t, 1).repeat([1, 1, 1, 1, self.channels])
         x = torch.cat((
                         self.gridx.repeat([batchsize, 1, 1, 1, 1]).clone(),
                         self.gridy.repeat([batchsize, 1, 1, 1, 1]).clone(),
@@ -181,10 +181,10 @@ class FNO2DTime(nn.Module):
         # Forward pass through the input layer (P)
         x = self.fc0(x)
         
-        # Swap the order of dimensions to [batch, in, x, y, t]
+        # Swap the order of dimensions to [batch, channels, x, y, t]
         x = x.permute(0, 4, 1, 2, 3)
         
-        # Add padding to the input tensor [batch, in, x+padding, y+padding, t+padding]
+        # Add padding to the input tensor [batch, channels, x+padding, y+padding, t+padding]
         if self.padding:
             x = F.pad(x, (0, 0, 0, self.padding[0], self.padding[1], 0))
             x = F.pad(x, (0,self.padding[2]), "constant", 0)
