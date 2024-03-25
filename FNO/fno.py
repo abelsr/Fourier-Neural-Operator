@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from layers import FourierBlock
+from .layers import FourierBlock
 import torch
 
 
