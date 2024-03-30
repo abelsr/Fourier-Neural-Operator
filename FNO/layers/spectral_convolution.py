@@ -57,7 +57,7 @@ class SpectralConvolution(nn.Module):
         # Rest of the weights
         for i in range(1, len(weights)):
             modes = self.mix_matrix[i].squeeze().tolist()
-            slices = tuple(slice(-mode, None) if sing < 0 else slice(None, mode) for sing, mode in zip(modes, self.modes))
+            slices = tuple(slice(-mode, None) if sign < 0 else slice(None, mode) for sign, mode in zip(modes, self.modes))
             out_ft[(Ellipsis,) + slices] = self.complex_mult(x_ft[(Ellipsis,) + slices], weights[i])
         
         return out_ft
