@@ -1,11 +1,35 @@
 import torch
 import torch.nn as nn
 from .layers import FourierBlock
-import torch
-
 
 class FNO(nn.Module):
+    """
+    Fourier Neural Operator (FNO) model.
+    
+    This model consists of the following layers:
+    1. Lifting layer (P)
+    2. Fourier blocks
+    3. Projection layer (Q)
+    """
     def __init__(self, modes, num_fourier_layers, in_channels, out_channels, mid_channels, activation, **kwargs):
+        """
+        Parameters:
+        ----------
+        modes: List[int] or Int (Required)
+            Number of Fourier modes to use in the Fourier layer (SpectralConvolution). Example: [1, 2, 3] or 4
+        num_fourier_layers: int (Required)
+            Number of Fourier blocks to use in the model
+        in_channels: int (Required)
+            Number of input channels
+        out_channels: int (Required)
+            Number of output channels
+        mid_channels: int (Required)
+            Number of hidden units in the projection layer (Q)
+        activation: nn.Module (Required)
+            Activation function to use in the projection layer (Q)
+        is_grid: bool (Optional)
+            Whether to use grid data. Default: True
+        """
         super().__init__()
         self.modes = modes
         self.dim = len(modes)
@@ -14,7 +38,7 @@ class FNO(nn.Module):
         self.out_channels = out_channels
         self.mid_channels = mid_channels
         self.activation = activation
-        self.is_grid = kwargs.get('is_grid', False)
+        self.is_grid = kwargs.get('is_grid', True)
         self.sizes = [0] * self.dim
         
         # Lifting layer (P)
@@ -27,10 +51,27 @@ class FNO(nn.Module):
         ])
         
         # Projection layer (Q)
-        self.q = nn.Linear(self.in_channels, self.mid_channels)
-        self.final = nn.Linear(self.mid_channels, self.out_channels)
+        self.q = nn.Sequential(
+            nn.Linear(self.in_channels, self.mid_channels),
+            self.activation,
+            nn.Linear(self.mid_channels, self.out_channels)
+        )
         
     def forward(self, x):
+        """
+        Forward pass of the model.
+        
+        Parameters:
+        ----------
+        x: torch.Tensor (Required)
+            Input tensor of shape [batch, channels, *sizes]
+            
+        Returns:
+        -------
+        torch.Tensor
+            Output tensor of shape [batch, channels, *sizes]
+        """
+        
         batch, channels, *sizes = x.size()
         
         # If grid is enabled, set the grid
@@ -60,19 +101,25 @@ class FNO(nn.Module):
         # Permute the dimensions [batch, channels, *sizes] -> [batch, *sizes, channels]
         x = x.permute(0, *range(2, self.dim + 2), 1)
         
-        # Projection layer
+        # Projection layer (Q)
         x = self.q(x)
-        
-        # Activation
-        x = self.activation(x)
-        
-        # Final layer
-        x = self.final(x)
         
         return x.permute(0, -1, *range(1, self.dim + 1))
         
         
     def set_grid(self, x):
+        """
+        `set_grid` method to create a grid for the input tensor.
+        
+        Parameters:
+        ----------
+        x: torch.Tensor (Required)
+            Input tensor of shape [batch, channels, *sizes]
+            
+        Returns:
+        --------
+        None
+        """
         batch, channels, *sizes = x.size()
         self.grids = []
         self.sizes = sizes
@@ -85,10 +132,3 @@ class FNO(nn.Module):
             repeats[dim + 1] = 1
             grid = torch.linspace(0, 1, sizes[dim], requires_grad=True, device=x.device, dtype=torch.float).reshape(new_shape).repeat(repeats).clone().detach()
             self.grids.append(grid)
-            
-            
-x = torch.randn(10, 2, 32, 32, 32)
-
-model = FNO(modes=[13, 13, 12], num_fourier_layers=4, in_channels=2, out_channels=2, mid_channels=5, activation=nn.GELU(), is_grid=True)
-out = model(x)
-print(out.size())
