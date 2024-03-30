@@ -1,10 +1,36 @@
-import torch
 import torch.nn as nn
 from .spectral_convolution import SpectralConvolution
 from .mlp import MLP
 
 class FourierBlock(nn.Module):
+    """
+        # Fourier block.
+        
+        This block consists of three layers:
+        1. Fourier layer: SpectralConvolution
+        2. MLP layer: MLP
+        3. Convolution layer: Convolution
+        
+    """
     def __init__(self, modes, in_channels, out_channels, hidden_size, num_hidden, activation=nn.GELU(), bias=False):
+        """        
+        Parameters:
+        -----------
+        modes: List[int] or Int (Required)
+            Number of Fourier modes to use in the Fourier layer (SpectralConvolution). Example: [1, 2, 3] or 4
+        in_channels: int (Required)
+            Number of input channels
+        out_channels: int (Required)
+            Number of output channels
+        hidden_size: int (Optional)
+            Number of hidden units in the MLP layer
+        num_hidden: int (Optional)
+            Number of hidden layers in the MLP layer
+        activation: nn.Module (Optional)
+            Activation function to use in the MLP layer. Default: nn.GELU()
+        bias: bool (Optional)
+            Whether to add bias to the output. Default: False
+        """
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -15,7 +41,7 @@ class FourierBlock(nn.Module):
         self.dim = len(self.modes)
         self.bias = bias
         
-        # Fourier layer 
+        # Fourier layer (SpectralConvolution)
         self.fourier = SpectralConvolution(in_channels, out_channels, modes)
         
         # MLP layer
@@ -31,9 +57,15 @@ class FourierBlock(nn.Module):
             
     def forward(self, x):
         """
+        Parameters:
+        ----------
         x: torch.Tensor
             Input tensor of shape [batch, channels, *sizes]
         
+        Returns:
+        --------
+        x: torch.Tensor
+            Output tensor of shape [batch, channels, *sizes]
         """
         sizes = x.size()
         
@@ -54,11 +86,3 @@ class FourierBlock(nn.Module):
         if self.bias:
             x = x + bias
         return x
-    
-    
-    
-# x = torch.randn(1, 1, 32, 32, 32)
-# fourier_block = FourierBlock([1, 2, 3], 1, 1, 64, 3)
-# output = fourier_block(x)
-# print(x.shape)
-# print(output.shape)
