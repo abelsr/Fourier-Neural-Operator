@@ -11,12 +11,15 @@ This module contains the train function for FNO models.
 import torch
 from FNO.lploss import LpLoss
 import numpy as np
+import pandas as pd
+import os
 import torch.nn.functional as F
 from itertools import islice as take
 from tqdm import trange
 from typing import List
 import pandas as pd
 from time import time
+from torch.utils.tensorboard import SummaryWriter
 
 def train_epoch(dataloader, model, optimizer, scheduler, loss_function, device='cpu'):
     """
@@ -34,11 +37,10 @@ def train_epoch(dataloader, model, optimizer, scheduler, loss_function, device='
     # Train for each batch
     for x, y in dataloader:
         batch_size, sx, sy, T_pred = y.shape
-        out = model(x.to(device)).view(batch_size, sx, sy, T_pred)
+        out = model(x.to(device)).reshape(batch_size, sx, sy, T_pred)
         
         # Compute loss
-        mse = F.mse_loss(out.view(batch_size, -1), y.to(device).view(batch_size, -1), reduction='mean')
-        l2 = loss_function(out.view(batch_size, -1), y.to(device).view(batch_size, -1))
+        l2 = loss_function(out.reshape(batch_size, -1), y.to(device).reshape(batch_size, -1))
 
         # Clear gradients
         optimizer.zero_grad()
@@ -48,8 +50,9 @@ def train_epoch(dataloader, model, optimizer, scheduler, loss_function, device='
 
         # Update weights
         optimizer.step()
-
-    scheduler.step()
+        
+    if scheduler is not None:
+        scheduler.step()
     model.eval()
     
 def eval_epoch(dataloader, model, loss_function, num_batches=None, device='cpu') -> List[List[float]]:
@@ -73,11 +76,11 @@ def eval_epoch(dataloader, model, loss_function, num_batches=None, device='cpu')
         test_l2 = 0
         for a, u_true in take(dataloader, num_batches):
             batch_size, sx, sy, T_pred = u_true.shape
-            out = model(a.to(device)).view(batch_size, sx, sy, T_pred)
+            out = model(a.to(device)).reshape(batch_size, sx, sy, T_pred)
             
             # Evaluate loss
-            test_l2 = loss_function(out.view(1, -1), u_true.to(device).view(1, -1)).item()
-            test_mse = F.mse_loss(out.view(1, -1), u_true.to(device).view(1, -1), reduction='mean')
+            test_l2 = loss_function(out.reshape(1, -1), u_true.to(device).reshape(1, -1)).item()
+            test_mse = F.mse_loss(out.reshape(1, -1), u_true.to(device).reshape(1, -1), reduction='mean')
             losses.append(test_l2)
             mses.append(test_mse.cpu())
             
@@ -106,6 +109,15 @@ def train_model(model, train_dataloader, test_dataloader, epochs=20, device='cpu
     * device: str - Device to use (cpu or cuda)
     * timer: bool - Timer
     
+    **kwargs:
+    --------
+    * loss_function: torch.nn - Loss function to use (default = LpLoss)
+    * optimizer: torch.optim - Optimizer to use (default = Adam)
+    * scheduler: torch.optim.lr_scheduler - Scheduler to use (default = StepLR)
+    * save_every: int - Save every x epochs (default = 50, -1 to save only at the end)
+    * model_name: str - Model name (default = 'fno_model')
+    * tensorboard: bool - Tensorboard (default = False)
+    
     Returns:
     --------
     * loss_hist: List[List[float]] - History of losses
@@ -114,7 +126,6 @@ def train_model(model, train_dataloader, test_dataloader, epochs=20, device='cpu
     # Loss function
     loss_function = kwargs.get('loss_function', 
                                LpLoss(size_average=False))
-    # loss_function = torch.nn.L1Loss()
     
     # Optimizer
     opt = kwargs.get('optimizer',
@@ -124,8 +135,25 @@ def train_model(model, train_dataloader, test_dataloader, epochs=20, device='cpu
     scheduler = kwargs.get('scheduler', 
                            torch.optim.lr_scheduler.StepLR(opt, step_size=scheduler_step, gamma=scheduler_gamma))
     
+    # Save every x epochs
+    save_every = kwargs.get('save_every', 50)
+    if save_every > epochs:
+        save_every = epochs
+    
+    # Model name
+    model_name: str = kwargs.get('model_name', 'fno_model')
+    
+    # Tensorboard
+    tensorboard = kwargs.get('tensorboard', False)
+    if tensorboard is True:
+        print("To use tensorboard, run: tensorboard --logdir='{model_name}/tensorboard'".format(model_name=model_name))
+    
+    # Create folder to save models
+    if not os.path.exists(model_name):
+        os.makedirs(model_name)
+    
     # Timer
-    timer = kwargs.get('timer', False)
+    timer: bool = kwargs.get('timer', False)
     
     # Initialize histories
     loss_hist, mse_hist = [], []
@@ -150,6 +178,29 @@ def train_model(model, train_dataloader, test_dataloader, epochs=20, device='cpu
         loss_hist.append([trn_loss, tst_loss])
         mse_hist.append([trn_mse, tst_mse])
         
+        # Save model every x epochs and history
+        if epoch % save_every == 0:
+            torch.save(model, f"{model_name}/model_{epoch}_epochs.pt")
+            # Save histories in a single csv file
+            pd.concat([pd.DataFrame(loss_hist, columns=['train_loss', 'test_loss']), 
+                       pd.DataFrame(mse_hist, columns=['train_mse', 'test_mse'])], 
+                      axis=1).to_csv(f"{model_name}/history.csv")
+            
+        # Write to tensorboard
+        if tensorboard is True:
+            writer = SummaryWriter(f"{model_name}/tensorboard") # To use tensorboard, run tensorboard --logdir={model_name}/tensorboard
+            # Write scalars to tensorboard to visualize them in the same plot
+            writer.add_scalars('Loss', {'train': trn_loss, 'test': tst_loss}, epoch)
+            writer.add_scalars('MSE', {'train': trn_mse, 'test': tst_mse}, epoch)
+            writer.flush()
+            
+    
+    
+    # Save model and history
+    torch.save(model, f"{model_name}/model_{epochs}_epochs.pt")
+    pd.concat([pd.DataFrame(loss_hist, columns=['train_loss', 'test_loss']), 
+               pd.DataFrame(mse_hist, columns=['train_mse', 'test_mse'])], axis=1).to_csv(f"{model_name}/history.csv")
+    
     # End timer
     if timer is True:
         end = time()
