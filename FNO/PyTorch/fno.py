@@ -50,7 +50,7 @@ class FNO(nn.Module):
             
 
         # Lifting layer (P)
-        self.p = nn.Linear(self.in_channels + (self.dim if self.add_grid else 0), self.mid_channels )
+        self.p = nn.Linear(self.in_channels + (self.dim if self.add_grid else 0), self.mid_channels)
 
         # Fourier blocks
         self.fourier_blocks = nn.ModuleList([
