@@ -1,4 +1,6 @@
+import torch
 import torch.nn as nn
+from typing import List, Union
 from .spectral_convolution import SpectralConvolution
 from .mlp import MLP
 
@@ -12,11 +14,11 @@ class FourierBlock(nn.Module):
         3. Convolution layer: Convolution
         
     """
-    def __init__(self, modes, in_channels, out_channels, hidden_size, num_hidden, activation=nn.GELU(), bias=False):
+    def __init__(self, modes: Union[List[int], int], in_channels: int, out_channels: int, hidden_size: int, num_hidden: int, activation: nn.Module = nn.GELU(), bias: bool = False) -> None:
         """        
         Parameters:
         -----------
-        modes: List[int] or Int (Required)
+        modes: List[int] or int (Required)
             Number of Fourier modes to use in the Fourier layer (SpectralConvolution). Example: [1, 2, 3] or 4
         in_channels: int (Required)
             Number of input channels
@@ -55,7 +57,7 @@ class FourierBlock(nn.Module):
         else:
             self.conv = nn.Conv1d(in_channels, out_channels, 3, padding=1)
             
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Parameters:
         ----------
@@ -63,10 +65,11 @@ class FourierBlock(nn.Module):
             Input tensor of shape [batch, channels, *sizes]
         
         Returns:
-        --------
+        -------
         x: torch.Tensor
             Output tensor of shape [batch, channels, *sizes]
         """
+        assert x.size(1) == self.in_channels, f"Input channels must be {self.in_channels} but got {x.size(1)} channels instead."
         sizes = x.size()
         
         if self.bias:
@@ -81,7 +84,7 @@ class FourierBlock(nn.Module):
         # Convolution layer
         x_conv = self.conv(x).view(*sizes)
         
-        # Add 
+        # Add
         x = x_ft + x_mlp + x_conv
         if self.bias:
             x = x + bias

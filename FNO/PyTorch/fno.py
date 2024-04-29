@@ -1,10 +1,32 @@
+from numpy import pad
+from sympy import E
 import torch
 import torch.nn as nn
-from layers import FourierBlock
-
+import torch.nn.functional as F
+from .layers import FourierBlock
+from typing import List
 
 class FNO(nn.Module):
-    def __init__(self, modes, num_fourier_layers, in_channels, out_channels, mid_channels, activation, **kwargs):
+    """
+    FNO (Fourier Neural Operator) model for solving PDEs using deep learning.
+    """
+    def __init__(self, modes: List[int], num_fourier_layers: int, in_channels: int, out_channels: int, mid_channels: int, activation: nn.Module, **kwargs: bool):
+        """
+        Initialize the FNO model.
+
+        Args:
+            modes (List[int]): List of integers representing the number of Fourier modes along each dimension.
+            num_fourier_layers (int): Number of Fourier blocks to use in the model.
+            in_channels (int): Number of input channels.
+            out_channels (int): Number of output channels.
+            mid_channels (int): Number of channels in the intermediate layers.
+            activation (nn.Module): Activation function to use.
+            **kwargs (bool): Additional keyword arguments.
+
+        Keyword Args:
+            add_grid (bool): Whether to use grid information in the model.
+            padding (List[int]): Padding to apply to the input tensor. [pad_dim1, pad_dim2, ...]
+        """
         super().__init__()
         self.modes = modes
         self.dim = len(modes)
@@ -13,48 +35,79 @@ class FNO(nn.Module):
         self.out_channels = out_channels
         self.mid_channels = mid_channels
         self.activation = activation
-        self.is_grid = kwargs.get('is_grid', False)
+        self.add_grid = kwargs.get('add_grid', False)
+        self.padding = kwargs.get('padding', None)
         self.sizes = [0] * self.dim
+        
+        
+        # Format the padding
+        if self.padding is not None:
+            # Padd is a list of integers representing the padding along each dimension, so we need to convert it to a tuple
+            self.padding = [(0, 0), (0, 0)] + [(p, p) for p in self.padding]
+            # Flatten the padding
+            self.padding = sum(self.padding, ())
+            # Slice for removing padding [:, :, padding[0]:-padding[1], padding[2]:-padding[3],...]
+            self.slice = tuple(slice(p, -p) if p > 0 else slice(None) for p in self.padding[2::2])
+            
+            
 
         # Lifting layer (P)
-        self.p = nn.Linear(self.in_channels + (self.dim if self.is_grid else 0), self.in_channels)
+        self.p = nn.Linear(self.in_channels + (self.dim if self.add_grid else 0), self.mid_channels )
 
         # Fourier blocks
         self.fourier_blocks = nn.ModuleList([
-            FourierBlock(modes, in_channels, in_channels, out_channels, activation)
+            FourierBlock(modes, mid_channels, mid_channels, out_channels, activation)
             for _ in range(num_fourier_layers)
         ])
 
         # Projection layer (Q)
-        self.q = nn.Linear(self.in_channels, self.mid_channels)
+        self.q = nn.Linear(self.mid_channels,self.mid_channels)
         self.final = nn.Linear(self.mid_channels, self.out_channels)
 
-    def forward(self, x):
-        batch, channels, *sizes = x.size()
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass of the FNO model.
+
+        Args:
+            x (torch.Tensor): Input tensor. [batch, channels, *sizes]
+
+        Returns:
+            torch.Tensor: Output tensor. [batch, channels, *sizes]
+        """
+        batch, in_channels, *sizes = x.size()
+        assert len(sizes) == self.dim, "Input tensor must have the same number of dimensions as the number of modes. Got {} dimensions, expected {}.".format(len(sizes), self.dim)
+        
+        # Permute the dimensions [batch, channels, *sizes] -> [batch, *sizes, channels]
+        x = x.permute(0, *range(2, self.dim + 2), 1)
 
         # If grid is enabled, set the grid
-        if self.is_grid:
+        if self.add_grid:
             self.set_grid(x)
             for i in range(len(sizes)):
                 if sizes[i] != self.sizes[i]:
                     break
-
-            x = x.reshape(batch, *sizes, channels)
             reshapes = [1] * len(x.size())
             reshapes[0] = batch
             batched_grid = [grid.repeat(reshapes) for grid in self.grids]
             x = torch.cat((*batched_grid, x), dim=-1)
-
 
         # Lifting layer
         x = self.p(x)
 
         # Permute the dimensions [batch, *sizes, channels] -> [batch, channels, *sizes]
         x = x.permute(0, -1, *range(1, self.dim + 1))
+        
+        # Pad the input tensor
+        if self.padding is not None:
+            x = F.pad(x, self.padding[::-1])
 
         # Fourier blocks
         for fourier_block in self.fourier_blocks:
             x = fourier_block(x)
+            
+        # Remove padding
+        if self.padding is not None:
+            x = x[(Ellipsis,) + tuple(self.slice)]
 
         # Permute the dimensions [batch, channels, *sizes] -> [batch, *sizes, channels]
         x = x.permute(0, *range(2, self.dim + 2), 1)
@@ -70,9 +123,15 @@ class FNO(nn.Module):
 
         return x.permute(0, -1, *range(1, self.dim + 1))
 
+    def set_grid(self, x: torch.Tensor) -> None:
+        """
+        Set the grid information for the FNO model.
 
-    def set_grid(self, x):
-        batch, channels, *sizes = x.size()
+        Args:
+            x (torch.Tensor): Input tensor.
+
+        """
+        batch, *sizes, in_channels = x.size()
         self.grids = []
         self.sizes = sizes
 

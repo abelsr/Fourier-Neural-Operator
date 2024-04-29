@@ -1,9 +1,21 @@
 import torch
 import torch.nn as nn
+from typing import List, Tuple
 
 
 class SpectralConvolution(nn.Module):
-    def __init__(self, in_channels, out_channels, modes):
+    """
+    Spectral Convolution layer implementation.
+    """
+    def __init__(self, in_channels: int, out_channels: int, modes: List[int]):
+        """
+        Initialize SpectralConvolution layer.
+
+        Args:
+            in_channels (int): Number of input channels.
+            out_channels (int): Number of output channels.
+            modes (List[int]): List of modes for spectral convolution.
+        """
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -15,17 +27,36 @@ class SpectralConvolution(nn.Module):
         self.scale = 1 / (in_channels * out_channels)
         
         # Weights
-        self.weights = [
+        self.weights = nn.ParameterList([
             nn.Parameter(self.scale * torch.ones(in_channels, out_channels, *self.modes, dtype=torch.cfloat))
             for _ in range(2 ** (self.dim - 1))
-        ]
+        ])
         
     @staticmethod
-    def complex_mult(input, weights):
+    def complex_mult(input: torch.Tensor, weights: torch.Tensor) -> torch.Tensor:
+        """
+        Perform complex multiplication between input and weights.
+
+        Args:
+            input (torch.Tensor): Input tensor. [batch_size, in_channels, *sizes]
+            weights (torch.Tensor): Weights tensor. [in_channels, out_channels, *sizes]
+
+        Returns:
+            torch.Tensor: Result of complex multiplication. [batch_size, out_channels, *sizes]
+        """
         return torch.einsum('bi...,io...->bo...', input, weights)
     
     @staticmethod
-    def get_mix_matrix(dim):
+    def get_mix_matrix(dim: int) -> torch.Tensor:
+        """
+        Generate a mixing matrix for spectral convolution.
+
+        Args:
+            dim (int): Dimension of the mixing matrix.
+
+        Returns:
+            torch.Tensor: Mixing matrix.
+        """
         # Create a lower triangular matrix with -1 in the diagonal and 1 in the rest
         mix_matrix = torch.tril(torch.ones((dim, dim), dtype=torch.float)) - 2*torch.eye(dim, dtype=torch.float)
         
@@ -43,7 +74,18 @@ class SpectralConvolution(nn.Module):
         
         return mix_matrix
     
-    def mix_weights(self, out_ft, x_ft, weights):
+    def mix_weights(self, out_ft: torch.Tensor, x_ft: torch.Tensor, weights: List[torch.Tensor]) -> torch.Tensor:
+        """
+        Mix the weights for spectral convolution.
+
+        Args:
+            out_ft (torch.Tensor): Output tensor in Fourier space.
+            x_ft (torch.Tensor): Input tensor in Fourier space.
+            weights (List[torch.Tensor]): List of weights tensors.
+
+        Returns:
+            torch.Tensor: Mixed weights tensor.
+        """
         slices = tuple(slice(None, mode) for mode in self.modes)
         
         # Mixing weights
@@ -62,9 +104,17 @@ class SpectralConvolution(nn.Module):
         
         return out_ft
         
-        
     
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass of the SpectralConvolution layer.
+
+        Args:
+            x (torch.Tensor): Input tensor.
+
+        Returns:
+            torch.Tensor: Output tensor.
+        """
         batch_size, _, *sizes = x.shape
         
         # Fourier transform
@@ -79,6 +129,6 @@ class SpectralConvolution(nn.Module):
         out_ft = self.mix_weights(out_ft, x_ft, self.weights)
         
         # Inverse Fourier transform to real space
-        out = torch.fft.irfftn(out_ft, dim=tuple(range(-self.dim, 0)))
+        out = torch.fft.irfftn(out_ft, dim=tuple(range(-self.dim, 0)), s=sizes)
         
         return out
