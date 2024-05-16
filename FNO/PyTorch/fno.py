@@ -24,6 +24,8 @@ class FNO(nn.Module):
         Keyword Args:
             add_grid (bool): Whether to use grid information in the model.
             padding (List[int]): Padding to apply to the input tensor. [pad_dim1, pad_dim2, ...]
+            lifting_channels (int): Number of channels in the lifting layer.
+            projection_channels (int): Number of channels in the projection layer.
         """
         super().__init__()
         self.modes = modes
@@ -33,6 +35,8 @@ class FNO(nn.Module):
         self.out_channels = out_channels
         self.mid_channels = mid_channels
         self.activation = activation
+        self.lifting_channels = kwargs.get('lifting_channels', 128)
+        self.projection_channels = kwargs.get('projection_channels', 128)
         self.add_grid = kwargs.get('add_grid', False)
         self.padding = kwargs.get('padding', None)
         self.sizes = [0] * self.dim
@@ -46,8 +50,6 @@ class FNO(nn.Module):
             self.padding = sum(self.padding, ())
             # Slice for removing padding [:, :, padding[0]:-padding[1], padding[2]:-padding[3],...]
             self.slice = tuple(slice(p, -p) if p > 0 else slice(None) for p in self.padding[2::2])
-            
-            
 
         # Lifting layer (P)
         self.p = nn.Linear(self.in_channels + (self.dim if self.add_grid else 0), self.mid_channels)
@@ -59,8 +61,8 @@ class FNO(nn.Module):
         ])
 
         # Projection layer (Q)
-        self.q = nn.Linear(self.mid_channels,self.mid_channels)
-        self.final = nn.Linear(self.mid_channels, self.out_channels)
+        self.q = nn.Linear(self.mid_channels, self.projection_channels)
+        self.final = nn.Linear(self.projection_channels, self.out_channels)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -80,6 +82,7 @@ class FNO(nn.Module):
 
         # If grid is enabled, set the grid
         if self.add_grid:
+            x = x.reshape(*(x.shape[:-2] + (1, ) + x.shape[-2:-1])).repeat(self.dim * [1] + [x.shape[-2]] + [1])
             self.set_grid(x)
             for i in range(len(sizes)):
                 if sizes[i] != self.sizes[i]:
