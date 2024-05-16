@@ -1,0 +1,22 @@
+version: '3.5'
+services:
+  pytorch-cuda:
+    container_name: pytorch-cuda
+    image: pytorch-cuda
+    ipc: host
+    ports:
+      - 8888:8888
+    volumes:
+      - ./:/workspace
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    # command: jupyter notebook --port=8888 --no-browser --ip=0.0.0.0 --allow-root --NotebookApp.token='123'
+    # Interactive mode and run shell
+    command: /bin/bash
+    tty: true
+    stdin_open: true
