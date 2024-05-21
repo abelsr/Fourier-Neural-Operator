@@ -14,7 +14,7 @@ class FourierBlock(nn.Module):
         3. Convolution layer: Convolution
         
     """
-    def __init__(self, modes: Union[List[int], int], in_channels: int, out_channels: int, hidden_size: int, num_hidden: int, activation: nn.Module = nn.GELU(), bias: bool = False) -> None:
+    def __init__(self, modes: Union[List[int], int], in_channels: int, out_channels: int, hidden_size: int = None, activation: nn.Module = nn.GELU(), bias: bool = False) -> None:
         """        
         Parameters:
         -----------
@@ -26,8 +26,6 @@ class FourierBlock(nn.Module):
             Number of output channels
         hidden_size: int (Optional)
             Number of hidden units in the MLP layer
-        num_hidden: int (Optional)
-            Number of hidden layers in the MLP layer
         activation: nn.Module (Optional)
             Activation function to use in the MLP layer. Default: nn.GELU()
         bias: bool (Optional)
@@ -36,8 +34,7 @@ class FourierBlock(nn.Module):
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.hidden_size = hidden_size or 8
-        self.num_hidden = num_hidden or 4
+        self.hidden_size = hidden_size
         self.activation = activation
         self.modes = modes
         self.dim = len(self.modes)
@@ -47,7 +44,8 @@ class FourierBlock(nn.Module):
         self.fourier = SpectralConvolution(in_channels, out_channels, modes)
         
         # MLP layer
-        self.mlp = MLP(len(self.modes), in_channels, out_channels, hidden_size, activation)
+        if self.hidden_size is not None:
+            self.mlp = MLP(len(self.modes), in_channels, out_channels, hidden_size, activation)
         
         # Convolution layer
         if self.dim == 2:
@@ -56,6 +54,7 @@ class FourierBlock(nn.Module):
             self.conv = nn.Conv3d(in_channels, out_channels, 3, padding=1)
         else:
             self.conv = nn.Conv1d(in_channels, out_channels, 3, padding=1)
+        # self.conv = nn.Conv1d(in_channels, out_channels, 1)
             
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -79,13 +78,19 @@ class FourierBlock(nn.Module):
         x_ft = self.fourier(x)
         
         # MLP layer
-        x_mlp = self.mlp(x)
+        if self.hidden_size is not None:
+            x_mlp = self.mlp(x)
         
         # Convolution layer
         x_conv = self.conv(x).view(*sizes)
+        # x_conv = self.conv(x.reshape(sizes[0], self.in_channels, -1)).reshape(*sizes)
         
         # Add
-        x = x_ft + x_mlp + x_conv
+        x = x_ft + x_conv
+        if self.hidden_size is not None:
+            x = x + x_mlp
         if self.bias:
             x = x + bias
+        # Activation
+        x = self.activation(x)
         return x
