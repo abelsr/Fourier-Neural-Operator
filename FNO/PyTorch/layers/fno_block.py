@@ -82,8 +82,10 @@ class FourierBlock(nn.Module):
             x_mlp = self.mlp(x)
         
         # Convolution layer
-        x_conv = self.conv(x).view(*sizes)
-        # x_conv = self.conv(x.reshape(sizes[0], self.in_channels, -1)).reshape(*sizes)
+        if self.dim == 2 and self.dim == 3:
+            x_conv = self.conv(x)
+        else:
+            x_conv = self.conv(x.reshape(sizes[0], self.in_channels, -1)).reshape(*sizes)
         
         # Add
         x = x_ft + x_conv
