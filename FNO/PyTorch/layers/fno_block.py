@@ -54,7 +54,6 @@ class FourierBlock(nn.Module):
             self.conv = nn.Conv3d(in_channels, out_channels, 3, padding=1)
         else:
             self.conv = nn.Conv1d(in_channels, out_channels, 3, padding=1)
-        # self.conv = nn.Conv1d(in_channels, out_channels, 1)
             
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
