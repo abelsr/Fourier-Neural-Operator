@@ -1,30 +1,29 @@
-import torch
-import torch.nn as nn
 from typing import List, Tuple, Optional, Union
 
-# Opcional: Si deseas utilizar TensorLy para factorización avanzada
-# pip install tensorly
+import torch
+import torch.nn as nn
+
 import tensorly as tl
 from tensorly.decomposition import tucker, parafac, tensor_train
 
-# Configurar TensorLy para usar PyTorch como backend
+# Set TensorLy to use PyTorch as the backend
 tl.set_backend('pytorch')
 
 
 class SpectralConvolution(nn.Module):
     """
-    Capa de Convolución Espectral optimizada con soporte para factorización de tensores,
-    entrenamiento de precisión mixta y datos N-dimensionales.
+    Spectral Convolution layer optimized with support for tensor factorization,
+    mixed-precision training, and N-dimensional data.
 
     Args:
-        in_channels (int): Número de canales de entrada.
-        out_channels (int): Número de canales de salida.
-        modes (List[int]): Lista de modos para la convolución espectral en cada dimensión.
-        factorization (str, opcional): Tipo de factorización a utilizar ('dense', 'tucker', 'cp', 'tt').
-                                        Por defecto es 'dense' (sin factorización).
-        rank (int, opcional): Rango para la factorización de bajo rango. Por defecto es 4.
-        bias (bool, opcional): Si se incluye un sesgo en la capa. Por defecto es True.
-        **kwargs: Otros parámetros adicionales.
+        in_channels (int): Number of input channels.
+        out_channels (int): Number of output channels.
+        modes (List[int]): List of modes for spectral convolution in each dimension.
+        factorization (str, optional): Type of factorization to use ('dense', 'tucker', 'cp', 'tt').
+                                       Defaults to 'dense' (no factorization).
+        rank (int, optional): Rank for low-rank factorization. Defaults to 16.
+        bias (bool, optional): Whether to include a bias term in the layer. Defaults to True.
+        **kwargs: Additional parameters.
     """
     def __init__(
         self,
@@ -44,16 +43,16 @@ class SpectralConvolution(nn.Module):
         self.factorization = factorization.lower()
         self.rank = rank
 
-        # Validar la factorización
+        # Validate factorization type
         assert self.factorization in ['dense', 'tucker', 'cp', 'tt'], \
-            "Factorización no soportada. Elige entre 'dense', 'tucker', 'cp', 'tt'."
+            "Unsupported factorization. Choose from 'dense', 'tucker', 'cp', 'tt'."
 
-        # Generar la matriz de mezcla
+        # Generate the mixing matrix
         self.mix_matrix = self.get_mix_matrix(self.dim)
 
-        # Factorización de pesos según el tipo seleccionado
+        # Weight factorization based on selected type
         if self.factorization == 'dense':
-            # Pesos completos sin factorización
+            # Full weights without factorization
             weight_shape = (in_channels, out_channels, *self.modes)
             self.weights_real = nn.Parameter(
                 torch.randn(weight_shape, dtype=torch.float32) * (1 / (in_channels * out_channels))**0.5
@@ -62,12 +61,12 @@ class SpectralConvolution(nn.Module):
                 torch.randn(weight_shape, dtype=torch.float32) * (1 / (in_channels * out_channels))**0.5
             )
         else:
-            # Inicializar el tensor de pesos completo para factorización
+            # Initialize the full weight tensor for factorization
             full_weight_shape = (in_channels, out_channels, *self.modes)
             full_weight_real = torch.randn(full_weight_shape, dtype=torch.float32) * (1 / (in_channels * out_channels))**0.5
             full_weight_imag = torch.randn(full_weight_shape, dtype=torch.float32) * (1 / (in_channels * out_channels))**0.5
 
-            # Aplicar la factorización seleccionada por separado para real e imag
+            # Apply the selected factorization separately for real and imaginary parts
             if self.factorization == 'tucker':
                 core_real, factors_real = tucker(full_weight_real, rank=[self.rank] * (2 + self.dim))
                 core_imag, factors_imag = tucker(full_weight_imag, rank=[self.rank] * (2 + self.dim))
@@ -88,7 +87,7 @@ class SpectralConvolution(nn.Module):
                 self.factors_tt_real = nn.ParameterList([nn.Parameter(factor) for factor in factors_tt_real])
                 self.factors_tt_imag = nn.ParameterList([nn.Parameter(factor) for factor in factors_tt_imag])
 
-        # Sesgo opcional
+        # Optional bias
         if bias:
             self.bias = nn.Parameter(torch.zeros(out_channels, dtype=torch.float32))
         else:
@@ -97,16 +96,16 @@ class SpectralConvolution(nn.Module):
     @staticmethod
     def complex_mult(input_real: torch.Tensor, input_imag: torch.Tensor, weights_real: torch.Tensor, weights_imag: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        Realiza la multiplicación compleja entre la entrada y los pesos.
+        Performs complex multiplication between input and weights.
 
         Args:
-            input_real (torch.Tensor): Parte real de la entrada. [batch_size, in_channels, *sizes]
-            input_imag (torch.Tensor): Parte imaginaria de la entrada. [batch_size, in_channels, *sizes]
-            weights_real (torch.Tensor): Parte real de los pesos. [in_channels, out_channels, *sizes]
-            weights_imag (torch.Tensor): Parte imaginaria de los pesos. [in_channels, out_channels, *sizes]
+            input_real (torch.Tensor): Real part of the input. [batch_size, in_channels, *sizes]
+            input_imag (torch.Tensor): Imaginary part of the input. [batch_size, in_channels, *sizes]
+            weights_real (torch.Tensor): Real part of the weights. [in_channels, out_channels, *sizes]
+            weights_imag (torch.Tensor): Imaginary part of the weights. [in_channels, out_channels, *sizes]
 
         Returns:
-            Tuple[torch.Tensor, torch.Tensor]: Partes real e imaginaria del resultado. [batch_size, out_channels, *sizes]
+            Tuple[torch.Tensor, torch.Tensor]: Real and imaginary parts of the result. [batch_size, out_channels, *sizes]
         """
         out_real = torch.einsum('bci...,cio...->bco...', input_real, weights_real) - torch.einsum('bci...,cio...->bco...', input_imag, weights_imag)
         out_imag = torch.einsum('bci...,cio...->bco...', input_real, weights_imag) + torch.einsum('bci...,cio...->bco...', input_imag, weights_real)
@@ -115,27 +114,27 @@ class SpectralConvolution(nn.Module):
     @staticmethod
     def get_mix_matrix(dim: int) -> torch.Tensor:
         """
-        Genera una matriz de mezcla para la convolución espectral.
+        Generates a mixing matrix for spectral convolution.
 
         Args:
-            dim (int): Dimensión de la matriz de mezcla.
+            dim (int): Dimension of the mixing matrix.
 
         Returns:
-            torch.Tensor: Matriz de mezcla.
+            torch.Tensor: Mixing matrix.
         """
-        # Crear una matriz triangular inferior con -1 en la diagonal y 1 en el resto
+        # Create a lower triangular matrix with -1 on the diagonal and 1 elsewhere
         mix_matrix = torch.tril(torch.ones((dim, dim), dtype=torch.float32)) - 2 * torch.eye(dim, dtype=torch.float32)
 
-        # Restar 2 a la última fila
+        # Subtract 2 from the last row
         mix_matrix[-1] = mix_matrix[-1] - 2
 
-        # El último elemento de la última fila es 1
+        # Set the last element of the last row to 1
         mix_matrix[-1, -1] = 1
 
-        # Los ceros de la matriz de mezcla se convierten en 1
+        # Convert zeros in the mixing matrix to 1
         mix_matrix[mix_matrix == 0] = 1
 
-        # Añadir una fila de unos al principio
+        # Add a row of ones at the beginning
         mix_matrix = torch.cat((torch.ones((1, dim), dtype=torch.float32), mix_matrix), dim=0)
 
         return mix_matrix
@@ -150,31 +149,31 @@ class SpectralConvolution(nn.Module):
         weights_imag: Union[List[torch.Tensor], torch.Tensor]
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        Mezcla los pesos para la convolución espectral.
+        Mixes weights for spectral convolution.
 
         Args:
-            out_ft_real (torch.Tensor): Parte real del tensor de salida en el espacio de Fourier.
-            out_ft_imag (torch.Tensor): Parte imaginaria del tensor de salida en el espacio de Fourier.
-            x_ft_real (torch.Tensor): Parte real del tensor de entrada en el espacio de Fourier.
-            x_ft_imag (torch.Tensor): Parte imaginaria del tensor de entrada en el espacio de Fourier.
-            weights_real (List[torch.Tensor] o torch.Tensor): Pesos reales.
-            weights_imag (List[torch.Tensor] o torch.Tensor): Pesos imaginarios.
+            out_ft_real (torch.Tensor): Real part of the output tensor in Fourier space.
+            out_ft_imag (torch.Tensor): Imaginary part of the output tensor in Fourier space.
+            x_ft_real (torch.Tensor): Real part of the input tensor in Fourier space.
+            x_ft_imag (torch.Tensor): Imaginary part of the input tensor in Fourier space.
+            weights_real (List[torch.Tensor] or torch.Tensor): Real weights.
+            weights_imag (List[torch.Tensor] or torch.Tensor): Imaginary weights.
 
         Returns:
-            Tuple[torch.Tensor, torch.Tensor]: Tensores de salida mezclados (parte real e imaginaria).
+            Tuple[torch.Tensor, torch.Tensor]: Mixed output tensors (real and imaginary parts).
         """
-        # Índices de cortes según la matriz de mezcla
+        # Slicing indices based on the mixing matrix
         slices = tuple(slice(None, min(mode, x_ft_real.size(i + 2))) for i, mode in enumerate(self.modes))
 
-        # Mezclar pesos
-        # Primer peso
+        # Mix weights
+        # First weight
         out_ft_real[(Ellipsis,) + slices], out_ft_imag[(Ellipsis,) + slices] = self.complex_mult(
             x_ft_real[(Ellipsis,) + slices], x_ft_imag[(Ellipsis,) + slices],
             weights_real[0][(Ellipsis,) + slices], weights_imag[0][(Ellipsis,) + slices]
         )
 
         if isinstance(weights_real, list) and len(weights_real) > 1:
-            # Resto de los pesos
+            # Remaining weights
             for i in range(1, len(weights_real)):
                 modes = self.mix_matrix[i].squeeze().tolist()
                 slices = tuple(
@@ -190,63 +189,62 @@ class SpectralConvolution(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Paso hacia adelante de la capa de convolución espectral.
+        Forward pass of the spectral convolution layer.
 
         Args:
-            x (torch.Tensor): Tensor de entrada de forma (batch, in_channels, D1, D2, ..., DN).
+            x (torch.Tensor): Input tensor of shape (batch, in_channels, D1, D2, ..., DN).
 
         Returns:
-            torch.Tensor: Tensor de salida de forma (batch, out_channels, D1, D2, ..., DN).
+            torch.Tensor: Output tensor of shape (batch, out_channels, D1, D2, ..., DN).
         """
         batch_size, _, *sizes = x.shape
 
-        # Aplicar la FFT N-dimensional
+        # Apply N-dimensional FFT
         x_ft = torch.fft.fftn(x, dim=tuple(range(-self.dim, 0)), norm='ortho')
 
-        # Separar en partes real e imaginaria
+        # Separate into real and imaginary parts
         x_ft_real, x_ft_imag = x_ft.real, x_ft.imag
 
-        # Inicializar los tensores de salida en el espacio de Fourier
+        # Initialize output tensors in Fourier space
         out_ft_real = torch.zeros(batch_size, self.out_channels, *sizes, dtype=x_ft_real.dtype, device=x.device)
         out_ft_imag = torch.zeros(batch_size, self.out_channels, *sizes, dtype=x_ft_imag.dtype, device=x.device)
 
-        # Aplicar mezcla de pesos según la factorización
+        # Apply weight mixing based on factorization type
         if self.factorization == 'dense':
             weights_real = self.weights_real
             weights_imag = self.weights_imag
         elif self.factorization == 'tucker':
-            # Reconstruir los pesos desde la factorización Tucker
+            # Reconstruct weights from Tucker factorization
             weight_recon_real = tl.tucker_to_tensor((self.core_real, [factor for factor in self.factors_real]))
             weight_recon_imag = tl.tucker_to_tensor((self.core_imag, [factor for factor in self.factors_imag]))
             weights_real = weight_recon_real
             weights_imag = weight_recon_imag
         elif self.factorization == 'cp':
-            # Reconstruir los pesos desde la factorización CP
+            # Reconstruct weights from CP factorization
             weight_recon_real = tl.cp_to_tensor((self.weights_cp_real, [factor for factor in self.factors_cp_real]))
             weight_recon_imag = tl.cp_to_tensor((self.weights_cp_imag, [factor for factor in self.factors_cp_imag]))
             weights_real = weight_recon_real
             weights_imag = weight_recon_imag
         elif self.factorization == 'tt':
-            # Reconstruir los pesos desde la factorización TT
-            # Tensor Train requiere reconstrucción secuencial
+            # Reconstruct weights from TT factorization
+            # Tensor Train requires sequential reconstruction
             weight_recon_real = tl.tt_to_tensor(self.factors_tt_real)
             weight_recon_imag = tl.tt_to_tensor(self.factors_tt_imag)
             weights_real = weight_recon_real
             weights_imag = weight_recon_imag
 
-
-        # Aplicar mezcla de pesos
+        # Apply weight mixing
         out_ft_real, out_ft_imag = self.mix_weights(
             out_ft_real, out_ft_imag, x_ft_real, x_ft_imag, weights_real, weights_imag
         )
 
-        # Combinar partes real e imaginaria
+        # Combine real and imaginary parts
         out_ft = torch.complex(out_ft_real, out_ft_imag)
 
-        # Aplicar la IFFT para volver al dominio espacial
+        # Apply IFFT to return to spatial domain
         out = torch.fft.ifftn(out_ft, dim=tuple(range(-self.dim, 0)), s=sizes, norm='ortho').real
 
-        # Añadir el sesgo si está presente
+        # Add bias if present
         if self.bias is not None:
             out = out + self.bias.view(1, -1, *([1] * self.dim))
 
