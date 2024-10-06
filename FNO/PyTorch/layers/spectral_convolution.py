@@ -107,8 +107,8 @@ class SpectralConvolution(nn.Module):
         Returns:
             Tuple[torch.Tensor, torch.Tensor]: Real and imaginary parts of the result. [batch_size, out_channels, *sizes]
         """
-        out_real = torch.einsum('bci...,cio...->bco...', input_real, weights_real) - torch.einsum('bci...,cio...->bco...', input_imag, weights_imag)
-        out_imag = torch.einsum('bci...,cio...->bco...', input_real, weights_imag) + torch.einsum('bci...,cio...->bco...', input_imag, weights_real)
+        out_real = torch.matmul(input_real, weights_real) - torch.matmul(input_imag, weights_imag)
+        out_imag = torch.matmul(input_real, weights_imag) + torch.matmul(input_imag, weights_real)
         return out_real, out_imag
 
     @staticmethod
