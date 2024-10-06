@@ -44,8 +44,8 @@ class SpectralConvolution(nn.Module):
         self.rank = rank
 
         # Validate factorization type
-        assert self.factorization in ['dense', 'tucker', 'cp', 'tt'], \
-            "Unsupported factorization. Choose from 'dense', 'tucker', 'cp', 'tt'."
+        if self.factorization not in ['dense', 'tucker', 'cp', 'tt']:
+            raise ValueError("Unsupported factorization. Choose from 'dense', 'tucker', 'cp', 'tt'.")
 
         # Generate the mixing matrix
         self.mix_matrix = self.get_mix_matrix(self.dim)
@@ -55,16 +55,16 @@ class SpectralConvolution(nn.Module):
             # Full weights without factorization
             weight_shape = (in_channels, out_channels, *self.modes)
             self.weights_real = nn.Parameter(
-                torch.randn(weight_shape, dtype=torch.float32) * (1 / (in_channels * out_channels))**0.5
+                nn.init.xavier_uniform_(torch.empty(weight_shape, dtype=torch.float32))
             )
             self.weights_imag = nn.Parameter(
-                torch.randn(weight_shape, dtype=torch.float32) * (1 / (in_channels * out_channels))**0.5
+                nn.init.xavier_uniform_(torch.empty(weight_shape, dtype=torch.float32))
             )
         else:
             # Initialize the full weight tensor for factorization
             full_weight_shape = (in_channels, out_channels, *self.modes)
-            full_weight_real = torch.randn(full_weight_shape, dtype=torch.float32) * (1 / (in_channels * out_channels))**0.5
-            full_weight_imag = torch.randn(full_weight_shape, dtype=torch.float32) * (1 / (in_channels * out_channels))**0.5
+            full_weight_real = nn.init.xavier_uniform_(torch.empty(full_weight_shape, dtype=torch.float32))
+            full_weight_imag = nn.init.xavier_uniform_(torch.empty(full_weight_shape, dtype=torch.float32))
 
             # Apply the selected factorization separately for real and imaginary parts
             if self.factorization == 'tucker':
@@ -121,20 +121,27 @@ class SpectralConvolution(nn.Module):
 
         Returns:
             torch.Tensor: Mixing matrix.
+
+        The mixing matrix is generated in the following steps:
+        1. Create a lower triangular matrix filled with ones and subtract 2 times the identity matrix to introduce negative values.
+        2. Subtract 2 from the last row to ensure a distinct pattern for mixing.
+        3. Set the last element of the last row to 1 to maintain a consistent matrix structure.
+        4. Convert all zero elements to 1, ensuring no zero values are present.
+        5. Add a row of ones at the beginning to provide an additional mixing row.
         """
-        # Create a lower triangular matrix with -1 on the diagonal and 1 elsewhere
+        # Step 1: Create a lower triangular matrix with -1 on the diagonal and 1 elsewhere
         mix_matrix = torch.tril(torch.ones((dim, dim), dtype=torch.float32)) - 2 * torch.eye(dim, dtype=torch.float32)
 
-        # Subtract 2 from the last row
+        # Step 2: Subtract 2 from the last row
         mix_matrix[-1] = mix_matrix[-1] - 2
 
-        # Set the last element of the last row to 1
+        # Step 3: Set the last element of the last row to 1
         mix_matrix[-1, -1] = 1
 
-        # Convert zeros in the mixing matrix to 1
+        # Step 4: Convert zeros in the mixing matrix to 1
         mix_matrix[mix_matrix == 0] = 1
 
-        # Add a row of ones at the beginning
+        # Step 5: Add a row of ones at the beginning
         mix_matrix = torch.cat((torch.ones((1, dim), dtype=torch.float32), mix_matrix), dim=0)
 
         return mix_matrix
@@ -199,6 +206,10 @@ class SpectralConvolution(nn.Module):
         """
         batch_size, _, *sizes = x.shape
 
+        # Ensure input has the expected number of dimensions
+        if len(sizes) != self.dim:
+            raise ValueError(f"Expected input to have {self.dim + 2} dimensions (including batch and channel), but got {len(sizes) + 2}")
+
         # Apply N-dimensional FFT
         x_ft = torch.fft.fftn(x, dim=tuple(range(-self.dim, 0)), norm='ortho')
 
@@ -211,32 +222,31 @@ class SpectralConvolution(nn.Module):
 
         # Apply weight mixing based on factorization type
         if self.factorization == 'dense':
-            weights_real = self.weights_real
-            weights_imag = self.weights_imag
+            # Use weights directly
+            out_ft_real, out_ft_imag = self.mix_weights(
+                out_ft_real, out_ft_imag, x_ft_real, x_ft_imag, self.weights_real, self.weights_imag
+            )
         elif self.factorization == 'tucker':
-            # Reconstruct weights from Tucker factorization
-            weight_recon_real = tl.tucker_to_tensor((self.core_real, [factor for factor in self.factors_real]))
-            weight_recon_imag = tl.tucker_to_tensor((self.core_imag, [factor for factor in self.factors_imag]))
-            weights_real = weight_recon_real
-            weights_imag = weight_recon_imag
+            # Reconstruct weights from Tucker factorization and use them directly
+            out_ft_real, out_ft_imag = self.mix_weights(
+                out_ft_real, out_ft_imag, x_ft_real, x_ft_imag,
+                tl.tucker_to_tensor((self.core_real, [factor for factor in self.factors_real])),
+                tl.tucker_to_tensor((self.core_imag, [factor for factor in self.factors_imag]))
+            )
         elif self.factorization == 'cp':
-            # Reconstruct weights from CP factorization
-            weight_recon_real = tl.cp_to_tensor((self.weights_cp_real, [factor for factor in self.factors_cp_real]))
-            weight_recon_imag = tl.cp_to_tensor((self.weights_cp_imag, [factor for factor in self.factors_cp_imag]))
-            weights_real = weight_recon_real
-            weights_imag = weight_recon_imag
+            # Reconstruct weights from CP factorization and use them directly
+            out_ft_real, out_ft_imag = self.mix_weights(
+                out_ft_real, out_ft_imag, x_ft_real, x_ft_imag,
+                tl.cp_to_tensor((self.weights_cp_real, [factor for factor in self.factors_cp_real])),
+                tl.cp_to_tensor((self.weights_cp_imag, [factor for factor in self.factors_cp_imag]))
+            )
         elif self.factorization == 'tt':
-            # Reconstruct weights from TT factorization
-            # Tensor Train requires sequential reconstruction
-            weight_recon_real = tl.tt_to_tensor(self.factors_tt_real)
-            weight_recon_imag = tl.tt_to_tensor(self.factors_tt_imag)
-            weights_real = weight_recon_real
-            weights_imag = weight_recon_imag
-
-        # Apply weight mixing
-        out_ft_real, out_ft_imag = self.mix_weights(
-            out_ft_real, out_ft_imag, x_ft_real, x_ft_imag, weights_real, weights_imag
-        )
+            # Reconstruct weights from TT factorization and use them directly
+            out_ft_real, out_ft_imag = self.mix_weights(
+                out_ft_real, out_ft_imag, x_ft_real, x_ft_imag,
+                tl.tt_to_tensor(self.factors_tt_real),
+                tl.tt_to_tensor(self.factors_tt_imag)
+            )
 
         # Combine real and imaginary parts
         out_ft = torch.complex(out_ft_real, out_ft_imag)
