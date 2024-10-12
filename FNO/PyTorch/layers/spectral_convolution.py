@@ -2,6 +2,7 @@ from typing import List, Tuple, Optional, Union
 
 import torch
 import torch.nn as nn
+import torch.amp as amp
 
 import tensorly as tl
 from tensorly.decomposition import tucker, parafac, tensor_train
@@ -31,7 +32,7 @@ class SpectralConvolution(nn.Module):
         out_channels: int,
         modes: List[int],
         factorization: str = 'tucker',
-        rank: int = 16,
+        rank: int = 8,
         bias: bool = True,
         **kwargs
     ):
@@ -107,8 +108,8 @@ class SpectralConvolution(nn.Module):
         Returns:
             Tuple[torch.Tensor, torch.Tensor]: Real and imaginary parts of the result. [batch_size, out_channels, *sizes]
         """
-        out_real = torch.matmul(input_real, weights_real) - torch.matmul(input_imag, weights_imag)
-        out_imag = torch.matmul(input_real, weights_imag) + torch.matmul(input_imag, weights_real)
+        out_real = torch.einsum('bi...,io...->bo...', input_real, weights_real) - torch.einsum('bi...,io...->bo...', input_imag, weights_imag)
+        out_imag = torch.einsum('bi...,io...->bo...', input_real, weights_imag) + torch.einsum('bi...,io...->bo...', input_imag, weights_real)
         return out_real, out_imag
 
     @staticmethod
@@ -176,7 +177,7 @@ class SpectralConvolution(nn.Module):
         # First weight
         out_ft_real[(Ellipsis,) + slices], out_ft_imag[(Ellipsis,) + slices] = self.complex_mult(
             x_ft_real[(Ellipsis,) + slices], x_ft_imag[(Ellipsis,) + slices],
-            weights_real[0][(Ellipsis,) + slices], weights_imag[0][(Ellipsis,) + slices]
+            weights_real[(Ellipsis,) + slices], weights_imag[(Ellipsis,) + slices]
         )
 
         if isinstance(weights_real, list) and len(weights_real) > 1:
@@ -210,8 +211,9 @@ class SpectralConvolution(nn.Module):
         if len(sizes) != self.dim:
             raise ValueError(f"Expected input to have {self.dim + 2} dimensions (including batch and channel), but got {len(sizes) + 2}")
 
-        # Apply N-dimensional FFT
-        x_ft = torch.fft.fftn(x, dim=tuple(range(-self.dim, 0)), norm='ortho')
+        # Apply N-dimensional FFT in float32
+        with amp.autocast('cuda', enabled=False):
+            x_ft = torch.fft.fftn(x.float(), dim=tuple(range(-self.dim, 0)), norm='ortho')
 
         # Separate into real and imaginary parts
         x_ft_real, x_ft_imag = x_ft.real, x_ft.imag
