@@ -1,0 +1,17 @@
+[project]
+name = "fourier-neural-operator"
+version = "1.0.0"
+description = "A PyTorch implementation of Fourier Neural Operator (FNO) for solving partial differential equations."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.3.4",
+    "pandas>=2.3.3",
+    "pillow>=12.0.0",
+    "scipy>=1.16.3",
+    "sympy>=1.14.0",
+    "torch>=2.9.0",
+    "torchaudio>=2.9.0",
+    "torchvision>=0.24.0",
+    "tqdm>=4.67.1",
+]
