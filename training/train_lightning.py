@@ -1,17 +1,20 @@
 import os, sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import TensorDataset, DataLoader
-from FNO.PyTorch import FNO
-from utilities.utils import MatlabFileReader
-from losses.lploss import LpLoss
+
 import lightning as L
 from pytorch_lightning.loggers import CSVLogger
 
+from FNO.PyTorch import FNO
+from losses.lploss import LpLoss
+from utilities.utils import MatlabFileReader
+
 # configs
-torch.set_float32_matmul_precision('medium')
+torch.backends.cudnn.allow_tf32 = True
 
 class LitFNO(L.LightningModule):
     def __init__(self, model):
@@ -69,7 +72,10 @@ class Dataset3D(TensorDataset):
     def __getitem__(self, idx):
         return self.input[idx], self.output[idx]
     
-data = MatlabFileReader(r'D:\Abel Santillan Rodriguez\Documents\Personal\Projects\Fourier Neural Operator\data\NavierStokes_V1e-5_N1200_T20.mat', to_tensor=True)
+data = MatlabFileReader(
+    file_path='/home/abelsr/Proyects/Deep-Learning/Fourier-Neural-Operator/notebooks/ns_s_128_N_10_data.mat', 
+    to_tensor=True
+)
 data = data.read_file('u')
 data_train, data_eval = Dataset3D(data[:800, ...]), Dataset3D(data[800:1000, ...])
 train_loader = DataLoader(data_train, batch_size=16, shuffle=True)
