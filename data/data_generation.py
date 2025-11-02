@@ -1,9 +1,9 @@
-# Libraries
-import torch
 import math
-import scipy.io
+import argparse
+
+import torch
+from tqdm import tqdm
 from timeit import default_timer
-from tqdm.notebook import tqdm
 
 class GaussianRF(object):
     """
@@ -238,7 +238,7 @@ def generate_ns_data(resolution, N, f, visc, delta_t, T_final, record_steps, bat
     t0 = default_timer()
     GRF = GaussianRF(2,
                      resolution,
-                     alpha=2.5,
+                     alpha=2,
                      tau=7,
                      device=device)
     
@@ -268,3 +268,45 @@ def generate_ns_data(resolution, N, f, visc, delta_t, T_final, record_steps, bat
             tqdm.write(f"Batch {j+1}/{N//batch_size} | N: {c}/{N} | Time: {t1-t0:.2f} s")
             
     return a.cpu(), u.cpu(), solt_t.cpu()
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Generate Navier-Stokes data")
+    parser.add_argument("--resolution", type=int, default=64, help="Resolution of the data")
+    parser.add_argument("--N", type=int, default=1000, help="Number of data samples to generate")
+    parser.add_argument("--visc", type=float, default=1e-3, help="Viscosity term")
+    parser.add_argument("--delta_t", type=float, default=1e-4, help="Time step size")
+    parser.add_argument("--T_final", type=float, default=0.01, help="Final time for the simulation")
+    parser.add_argument("--record_steps", type=int, default=10, help="Number of time steps to record")
+    parser.add_argument("--batch_size", type=int, default=10, help="Batch size for generating data")
+    parser.add_argument("--device", type=str, default="cpu", help="Device to use for computation (e.g., 'cpu', 'cuda')")
+    parser.add_argument("--debug", action="store_true", help="Print debug information")
+    
+    args = parser.parse_args()
+
+    # External force term (use a sine function as an example)
+    f = torch.sin(2 * math.pi * torch.linspace(0, 1, args.resolution).unsqueeze(0).repeat(args.resolution, 1)) * \
+        torch.sin(2 * math.pi * torch.linspace(0, 1, args.resolution).unsqueeze(1).repeat(1, args.resolution))
+    f = f.to(args.device)
+
+    a, u, solt_t = generate_ns_data(args.resolution,
+                                    args.N,
+                                    f,
+                                    args.visc,
+                                    args.delta_t,
+                                    args.T_final,
+                                    args.record_steps,
+                                    args.batch_size,
+                                    args.device,
+                                    args.debug)
+
+    # Save generated data
+    torch.save({"initial_conditions": a,
+                 "solutions": u,
+                 "time_points": solt_t},
+                "navier_stokes_data.pt")
+
+    print("Data generation completed.")
+    print(f"Initial conditions shape: {a.shape}")
+    print(f"Solutions shape: {u.shape}")
+    print(f"Time points shape: {solt_t.shape}")
