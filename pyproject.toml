@@ -10,6 +10,7 @@ dependencies = [
     "pillow>=12.0.0",
     "scipy>=1.16.3",
     "sympy>=1.14.0",
+    "tensorly>=0.9.0",
     "torch>=2.9.0",
     "torchaudio>=2.9.0",
     "torchvision>=0.24.0",
