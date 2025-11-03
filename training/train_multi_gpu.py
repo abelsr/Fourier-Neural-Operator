@@ -24,9 +24,9 @@ class Dataset3D(TensorDataset):
         self.input  = data[:, :, :, :10]
         self.output = data[:, :, :, 10:]
         self.data_size = data.shape[0]
-        self.size_x = data.shape[1]
-        self.size_y = data.shape[2]
-        self.size_t = self.input.shape[3]
+        self.size_x    = data.shape[1]
+        self.size_y    = data.shape[2]
+        self.size_t    = self.input.shape[3]
         self.input = self.input.reshape(self.data_size, self.size_x, self.size_y, 1, self.size_t).repeat(1, 1, 1, self.size_t, 1)
         self.input = self.get_grid().permute(0, 4, 1, 2, 3)
 
