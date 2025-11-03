@@ -1,14 +1,28 @@
+from typing import Any, List
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 from .layers import FourierBlock
-from typing import List
+
 
 class FNO(nn.Module):
     """
     FNO (Fourier Neural Operator) model for solving PDEs using deep learning.
     """
-    def __init__(self, modes: List[int], num_fourier_layers: int, in_channels: int, lifting_channels: int, projection_channels:int, out_channels: int, mid_channels: int, activation: nn.Module, **kwargs: bool):
+    def __init__(
+        self, 
+        modes: List[int], 
+        num_fourier_layers: int, 
+        in_channels: int, 
+        lifting_channels: int, 
+        projection_channels:int, 
+        out_channels: int, 
+        mid_channels: int, 
+        activation: nn.Module, 
+        **kwargs: Any
+    ):
         """
         Initialize the FNO model.
 
@@ -20,7 +34,7 @@ class FNO(nn.Module):
             out_channels (int): Number of output channels.
             mid_channels (int): Number of channels in the intermediate layers.
             activation (nn.Module): Activation function to use.
-            **kwargs (bool): Additional keyword arguments.
+            **kwargs (Any): Additional keyword arguments.
 
         Keyword Args:
             add_grid (bool): Whether to use grid information in the model.
@@ -38,13 +52,17 @@ class FNO(nn.Module):
         self.activation = activation
         self.add_grid = kwargs.get('add_grid', False)
         self.padding = kwargs.get('padding', None)
+        self.n_fno_blocks_per_layer = kwargs.get('n_fno_blocks_per_layer', 2)
+        self.dropout = kwargs.get('dropout', 0.0)
+        self.attn_gating = kwargs.get('attn_gating', True)   # <-- NUEVO
+        self.attn_temp   = kwargs.get('attn_temperature', 1.0)  # <-- NUEVO
         self.sizes = [0] * self.dim
         
         
         # Format the padding
         if self.padding is not None:
             # Padd is a list of integers representing the padding along each dimension, so we need to convert it to a tuple
-            self.padding = [(0, 0), (0, 0)] + [(p, p) for p in self.padding]
+            self.padding = [(0, 0), (0, 0)] + [(p, p) for p in self.padding] # type: ignore
             # Flatten the padding
             self.padding = sum(self.padding, ())
             # Slice for removing padding [:, :, padding[0]:-padding[1], padding[2]:-padding[3],...]
@@ -61,14 +79,52 @@ class FNO(nn.Module):
         
 
         # Fourier blocks
+        # self.fourier_blocks = nn.ModuleList([
+        #     FourierBlock(modes, mid_channels, mid_channels, activation=activation)
+        #     for _ in range(num_fourier_layers)
+        # ])
         self.fourier_blocks = nn.ModuleList([
-            FourierBlock(modes, mid_channels, mid_channels, activation=activation)
-            for _ in range(num_fourier_layers)
+            nn.ModuleList([
+                FourierBlock(modes, self.mid_channels, self.mid_channels, hidden_size=self.mid_channels, activation=activation)
+                for _ in range(self.n_fno_blocks_per_layer)
+            ])
+            for _ in range(self.num_fourier_layers)
         ])
+
+        if self.dropout > 0.0:
+            self.dropout_layer = nn.Dropout(self.dropout)
+            
+        if self.attn_gating:
+            self.attn_scorer = nn.Linear(self.mid_channels, 1)
 
         # Projection layer (Q)
         self.q1 = nn.Linear(self.mid_channels,self.projection_channels)
         self.final = nn.Linear(self.projection_channels, self.out_channels)
+        
+    def _attention_over_branches(self, Y: torch.Tensor) -> torch.Tensor:
+        """
+        Y: [K, B, C, *S]  salidas apiladas de las ramas de una capa
+        Devuelve alpha: [B, K] con softmax sobre K (por batch).
+        """
+        # GAP sobre ejes espaciales -> [K, B, C]
+        if Y.dim() >= 4:
+            reduce_dims = tuple(range(3, Y.dim()))
+            pooled = Y.mean(dim=reduce_dims)   # [K, B, C]
+        else:
+            # Si no hay ejes espaciales, ya es [K, B, C]
+            pooled = Y
+
+        # Pasar a [K*B, C] para aplicar Linear por rama compartida
+        KB, C = pooled.shape[0]*pooled.shape[1], pooled.shape[2]
+        logits = self.attn_scorer(pooled.reshape(KB, C))     # [K*B, 1]
+        logits = logits.reshape(pooled.shape[0], pooled.shape[1])  # [K, B]
+
+        # Transponer a [B, K] y aplicar softmax con temperatura τ
+        logits = logits.transpose(0, 1)  # [B, K]
+        if self.attn_temp is not None and self.attn_temp > 0:
+            logits = logits / self.attn_temp
+        alpha = F.softmax(logits, dim=-1)  # [B, K]
+        return alpha
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -92,7 +148,7 @@ class FNO(nn.Module):
                 if sizes[i] != self.sizes[i] or self.grids[0].shape[0] != batch:
                     self.set_grid(x)
                     break
-            x = torch.cat((x, self.grids), dim=-1)
+            x = torch.cat((x, self.grids), dim=-1) # type: ignore
 
         # Lifting layer
         x = self.p1(x)
@@ -104,12 +160,31 @@ class FNO(nn.Module):
         
         # Pad the input tensor
         if self.padding is not None:
-            x = F.pad(x, self.padding[::-1])
+            x = F.pad(x, self.padding[::-1]) # type: ignore
 
         # Fourier blocks
         for fourier_block in self.fourier_blocks:
-            x = fourier_block(x)
-            
+            ys = [fb(x) for fb in fourier_block]   # type: ignore # K tensores [B, C, *S]
+            Y  = torch.stack(ys, dim=0)                    # [K, B, C, *S]
+
+            if self.attn_gating:
+                # α: [B, K]
+                alpha = self._attention_over_branches(Y)
+
+                # Reordena a [B, K, C, *S] para broadcast con α
+                YB = Y.permute(1, 0, 2, *range(3, Y.dim()))  # [B, K, C, *S]
+                # Expande α -> [B, K, 1, 1, ...]
+                expand_shape = [alpha.shape[0], alpha.shape[1]] + [1]*(YB.dim()-2)
+                weighted = YB * alpha.view(*expand_shape)     # [B, K, C, *S]
+                x = weighted.sum(dim=1)                       # [B, C, *S]
+            else:
+                # Fallback: suma simple
+                x = Y.sum(dim=0)
+
+            if self.dropout > 0.0:
+                x = self.dropout_layer(x)
+
+
         # Remove padding
         if self.padding is not None:
             x = x[(Ellipsis,) + tuple(self.slice)]

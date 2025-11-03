@@ -14,7 +14,15 @@ class FourierBlock(nn.Module):
         3. Convolution layer: Convolution
         
     """
-    def __init__(self, modes: Union[List[int], int], in_channels: int, out_channels: int, hidden_size: int = None, activation: nn.Module = nn.GELU(), bias: bool = False) -> None:
+    def __init__(
+        self, 
+        modes: List[int], 
+        in_channels: int, 
+        out_channels: int, 
+        hidden_size: int | None = None, 
+        activation: nn.Module = nn.GELU(), 
+        bias: bool = False
+    ) -> None:
         """        
         Parameters:
         -----------
@@ -41,11 +49,11 @@ class FourierBlock(nn.Module):
         self.bias = bias
         
         # Fourier layer (SpectralConvolution)
-        self.fourier = SpectralConvolution(in_channels, out_channels, modes)
+        self.fourier = SpectralConvolution(in_channels, out_channels, modes, factorization='dense')
         
         # MLP layer
         if self.hidden_size is not None:
-            self.mlp = MLP(len(self.modes), in_channels, out_channels, hidden_size, activation)
+            self.mlp = MLP(len(self.modes), in_channels, out_channels, self.hidden_size, activation)
         
         # Convolution layer
         if self.dim == 2:

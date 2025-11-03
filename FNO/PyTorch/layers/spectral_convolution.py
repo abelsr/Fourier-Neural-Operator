@@ -258,6 +258,6 @@ class SpectralConvolution(nn.Module):
 
         # Add bias if present
         if self.bias is not None:
-            out = out + self.bias.view(1, -1, *([1] * self.dim))
+            out = out + x
 
         return out
